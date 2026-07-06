@@ -45,24 +45,27 @@ day, not a month.
 
 | | value |
 |---|---|
-| Corpus | 44,019 docs · 117.8M words · **239M training tokens** |
+| Corpus | 533,248 docs · 485.7M words · **822.7M training tokens** (≈2.4:1 general:domain) |
 | Model | **113M** params — decoder-only, GQA + RoPE + RMSNorm + SwiGLU |
 | Hardware | 2× NVIDIA A30 (24 GB each), bf16, DDP |
 | Context length | **4096** tokens |
-| Best val loss | **2.276** (perplexity **9.74**) |
-| Train time | ~6.5 h (8,000 iters, ~2.9 s/iter) |
-| Inference | KV-cached streaming, ~176 ms to first token |
+| Training | 8,000 iters (~3.8 epochs), ~6.5 h, ~2.9 s/iter |
+| Fluency (bits/byte, general text) | **0.997** — vs 1.527 for a domain-only base (**−35%**) |
+| Inference | KV-cached streaming, ~176 ms to first token, anti-repeat sampler |
 
 <p align="center"><img src="assets/training_dynamics.png" width="80%"></p>
 
-Two facts worth pausing on:
+Three findings worth pausing on:
 
-- **Longer context clearly helped.** Retraining at 4096 (vs 1024) dropped perplexity
-  ~11% (9.74 vs 10.93) for only ~26% more compute per step — papers have long-range
-  structure a 1024-token window literally cannot see across.
-- **The model uses that context.** In a 4096-token window, the loss on tokens at
-  positions 2048–4096 is **25% lower** than on positions 0–64 — the model conditions
-  on thousands of preceding tokens (see [§8](#8-stage-6--inference)).
+- **Longer context helped.** A controlled A/B (data held fixed) — retraining at 4096
+  vs 1024 dropped perplexity ~11% (9.74 → 10.93 domain-only) for only ~26% more
+  compute per step — papers have long-range structure a 1024-token window can't see across.
+- **The model uses that context.** In a 4096-token window, loss on tokens at positions
+  2048–4096 is **25% lower** than at 0–64 — it conditions on thousands of preceding
+  tokens (see [§8](#8-stage-6--inference)).
+- **A general-text mix restores fluency.** Adding Wikipedia + FineWeb-Edu (~2.4:1
+  general:domain) cut bits/byte on general prose by 35% vs a paper-only base — see the
+  data-mix comparison below.
 
 ### Data mix: domain-only (v1) → general + domain (v2)
 
@@ -323,7 +326,7 @@ for enc in tok.encode_batch(batch):
         np.asarray(buf, dtype=np.uint16).tofile(fout)   # 2 bytes/token
 ```
 
-`uint16` (0–65535) fits our 16k vocab in 2 bytes/token → 239M tokens ≈ 478 MB, and the
+`uint16` (0–65535) fits our 16k vocab in 2 bytes/token → 822.7M tokens ≈ 1.6 GB, and the
 training loader `np.memmap`s it (no RAM blow-up). **Crucially, this file is
 context-length-agnostic** — the window width is chosen at *training* time, which is why
 switching 1024→4096 needed no re-tokenization.

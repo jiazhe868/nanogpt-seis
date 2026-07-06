@@ -116,7 +116,7 @@ def pick_step(records):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
-    ap.add_argument("--prompt", type=str, default="The 2011 Tohoku earthquake")
+    ap.add_argument("--prompt", type=str, default="The San Andreas Fault")
     ap.add_argument("--max-new-tokens", type=int, default=180)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()

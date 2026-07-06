@@ -56,13 +56,13 @@ def main():
     for i in range(len(stages) - 1):
         arrow(ax, centers[i][1], y + h / 2, centers[i + 1][0], y + h / 2)
 
-    # data sources feeding stage 1 from above
+    # data sources feeding stage 1 from above (domain + general mix)
     sources = [("arXiv", BLUE), ("Crossref +\nUnpaywall", AQUA), ("EarthArXiv", VIOLET),
-               ("Wikipedia", ORANGE), ("Substack", RED)]
+               ("Substack", RED), ("Wikipedia", ORANGE), ("FineWeb-Edu", GREEN)]
     sx = 0.1
-    sw = 3.55 / 1  # cluster width matches crawl box roughly; use small chips across top-left
-    cw = 1.55
-    ax.text(0.1, 7.15, "free data sources", fontsize=9.5, color=MUTED, style="italic")
+    cw = 1.5
+    ax.text(0.1, 7.15, "free data sources — earthquake domain  +  general (fluency)",
+            fontsize=9.5, color=MUTED, style="italic")
     for name, c in sources:
         ax.add_patch(FancyBboxPatch((sx, 6.0), cw, 0.85,
                      boxstyle="round,pad=0.02,rounding_size=0.06",

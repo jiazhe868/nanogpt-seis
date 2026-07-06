@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 
 ROOT = Path(__file__).resolve().parents[2]
-LOG = ROOT / "checkpoints" / "train_ctx4k.log"
+LOG = ROOT / "checkpoints" / "train_mix.log"      # current model: general+domain mix
 ASSETS = ROOT / "assets"
 
 # schedule (configs/gpt120m_ctx4k.yaml)
@@ -72,7 +72,7 @@ def fig_dynamics(t_it, t_ls, e_it, e_va):
     ax.set_ylim(1.9, 10)
     ax.set_xlabel("iteration")
     ax.set_ylabel("cross-entropy loss (log scale)")
-    ax.set_title("nanoGPT-Seis — training dynamics (113M, ctx 4096, 2×A30)",
+    ax.set_title("nanoGPT-Seis — training dynamics (113M, ctx 4096, general+domain mix)",
                  loc="left", fontsize=13)
     ax.grid(True, which="both", color=GRID, lw=0.9)
     ax.set_axisbelow(True)

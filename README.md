@@ -109,6 +109,14 @@ Code: `src/crawl/`.
 | Preprints | `preprints.py` | arXiv + EarthArXiv full text | arXiv API + OSF/DOI → PDF |
 | Wikipedia | `wikipedia.py` | pages titled *earthquake* | MediaWiki API plaintext extracts |
 | Substack | `substack.py` | *Earthquake Insights* articles | archive API + HTML body parse |
+| General text | `general.py` | Wikipedia + FineWeb-Edu (fluency mix) | HF `datasets` streaming to a token budget |
+
+> **Why a general-text mix?** A ~113M model trained *only* on research papers
+> becomes fluent in paper-register but repetitive and incoherent in plain prose,
+> and 240M tokens is far below compute-optimal. So we add ~240M tokens of
+> **Wikipedia** (encyclopedic) + **FineWeb-Edu** (quality-filtered educational web)
+> for a ~1:1 general:domain mix — a fluent base that the planned SFT stage can then
+> make conversational. (Base pretraining alone never yields chat; that's SFT.)
 
 Every document is normalized to one schema (`src/crawl/common.py`):
 

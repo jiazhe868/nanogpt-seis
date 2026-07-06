@@ -4,6 +4,7 @@ beautifulsoup4
 feedparser
 pymupdf            # PDF text extraction (imported as `fitz`)
 datasketch         # MinHash near-dup removal
+datasets           # streaming Wikipedia / FineWeb-Edu general-text mix
 tqdm
 
 # --- tokenizer ---

@@ -59,20 +59,24 @@ class InferenceEngine:
     @torch.no_grad()
     def generate(self, prompt: str = "", max_new_tokens: int = 256,
                  temperature: float = 0.8, top_k: int | None = 200,
-                 seed: int | None = None) -> str:
+                 seed: int | None = None, repetition_penalty: float = 1.0,
+                 no_repeat_ngram: int = 0) -> str:
         if seed is not None:
             torch.manual_seed(seed)
         ids = self.tok.encode(prompt).ids if prompt else [self.eot_id]
         x = torch.tensor(ids, dtype=torch.long, device=self.device)[None]
         with self.amp:
-            y = self.model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            y = self.model.generate(x, max_new_tokens, temperature=temperature,
+                                     top_k=top_k, repetition_penalty=repetition_penalty,
+                                     no_repeat_ngram=no_repeat_ngram)
         out = [t for t in y[0].tolist() if t != self.eot_id]
         return self.tok.decode(out)
 
     @torch.no_grad()
     def stream(self, prompt: str = "", max_new_tokens: int = 256,
                temperature: float = 0.8, top_k: int | None = 200,
-               seed: int | None = None):
+               seed: int | None = None, repetition_penalty: float = 1.0,
+               no_repeat_ngram: int = 0):
         """Yield decoded text pieces token-by-token (real-time streaming).
 
         Decodes the full running id list each step and yields only the new
@@ -86,7 +90,8 @@ class InferenceEngine:
         generated: list[int] = []
         prev = ""
         with self.amp:
-            for nxt in self.model.generate_stream(x, max_new_tokens, temperature, top_k):
+            for nxt in self.model.generate_stream(x, max_new_tokens, temperature, top_k,
+                                                  repetition_penalty, no_repeat_ngram):
                 tid = int(nxt[0, 0])
                 if tid == self.eot_id:                   # natural stop at doc end
                     break
@@ -287,13 +292,15 @@ def run_tests(eng: InferenceEngine) -> None:
         print(f"  {n:>4} tokens: {eng.throughput(max_new_tokens=n):.1f} tok/s")
 
 
-def interactive(eng: InferenceEngine) -> None:
+def interactive(eng: InferenceEngine, repetition_penalty=1.15, no_repeat_ngram=3) -> None:
     print("Interactive mode (streaming). Empty prompt = free generation. Ctrl-C to exit.")
     try:
         while True:
             p = input("\nprompt> ").strip()
             print(p, end="", flush=True)
-            for piece in eng.stream(p, max_new_tokens=300, temperature=0.8, top_k=200):
+            for piece in eng.stream(p, max_new_tokens=300, temperature=0.8, top_k=200,
+                                    repetition_penalty=repetition_penalty,
+                                    no_repeat_ngram=no_repeat_ngram):
                 print(piece, end="", flush=True)
             print()
     except (KeyboardInterrupt, EOFError):
@@ -312,23 +319,29 @@ def main() -> None:
     ap.add_argument("--top-k", type=int, default=200)
     ap.add_argument("--no-stream", action="store_true",
                     help="print the full completion at once instead of streaming")
+    ap.add_argument("--repetition-penalty", type=float, default=1.15,
+                    help="downweight already-seen tokens (1.0 = off)")
+    ap.add_argument("--no-repeat-ngram", type=int, default=3,
+                    help="hard-ban repeating n-grams of this size (0 = off)")
     args = ap.parse_args()
 
     eng = InferenceEngine(args.ckpt)
+    rp, ng = args.repetition_penalty, args.no_repeat_ngram
     if args.test:
         run_tests(eng)
     elif args.interactive:
-        interactive(eng)
+        interactive(eng, rp, ng)
     elif args.perplexity_text is not None:
         print(f"ppl = {eng.perplexity(args.perplexity_text):.2f}")
     else:
         prompt = args.prompt or "The 2011 Tohoku earthquake"
         if args.no_stream:
-            print(eng.generate(prompt, args.max_new_tokens, args.temperature, args.top_k))
+            print(eng.generate(prompt, args.max_new_tokens, args.temperature,
+                               args.top_k, repetition_penalty=rp, no_repeat_ngram=ng))
         else:
             print(prompt, end="", flush=True)           # echo prompt, then stream
-            for piece in eng.stream(prompt, args.max_new_tokens,
-                                    args.temperature, args.top_k):
+            for piece in eng.stream(prompt, args.max_new_tokens, args.temperature,
+                                    args.top_k, repetition_penalty=rp, no_repeat_ngram=ng):
                 print(piece, end="", flush=True)
             print()
 

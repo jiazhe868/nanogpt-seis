@@ -26,6 +26,8 @@ def main() -> None:
     ap.add_argument("--max-new-tokens", type=int, default=300)
     ap.add_argument("--temperature", type=float, default=0.8)
     ap.add_argument("--top-k", type=int, default=200)
+    ap.add_argument("--repetition-penalty", type=float, default=1.15)
+    ap.add_argument("--no-repeat-ngram", type=int, default=3)
     ap.add_argument("--seed", type=int, default=1337)
     args = ap.parse_args()
 
@@ -53,7 +55,8 @@ def main() -> None:
 
     for i in range(args.num_samples):
         y = model.generate(x, args.max_new_tokens, temperature=args.temperature,
-                           top_k=args.top_k)
+                           top_k=args.top_k, repetition_penalty=args.repetition_penalty,
+                           no_repeat_ngram=args.no_repeat_ngram)
         out_ids = [t for t in y[0].tolist() if t != eot_id]
         print(f"\n===== sample {i + 1} =====")
         print(tok.decode(out_ids))

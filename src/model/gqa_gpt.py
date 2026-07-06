@@ -315,10 +315,32 @@ class GPT(nn.Module):
                                  fused=(device_type == "cuda"))
 
     # ---- generation ---- #
-    def _sample(self, logits, temperature, top_k):
-        """Turn last-position logits into one sampled token (with temperature and
-        optional top-k truncation)."""
+    def _sample(self, logits, temperature, top_k, seq=None,
+                repetition_penalty=1.0, no_repeat_ngram=0):
+        """Turn last-position logits into one sampled token.
+
+        Order matters: discourage repetition, then top-k truncate, then sample.
+          * repetition_penalty (>1): divide the logits of already-seen tokens,
+            making the model less likely to loop (CTRL-style).
+          * no_repeat_ngram (n>0): hard-ban any token that would complete an
+            n-gram already present in `seq` — decisively kills exact loops.
+        `seq` is the running (B, T) id sequence; both features are no-ops without it.
+        """
         logits = logits[:, -1, :] / max(temperature, 1e-6)
+        if seq is not None and repetition_penalty != 1.0:
+            for b in range(logits.size(0)):
+                ids = torch.unique(seq[b])
+                lv = logits[b, ids]
+                logits[b, ids] = torch.where(lv > 0, lv / repetition_penalty,
+                                             lv * repetition_penalty)
+        if seq is not None and no_repeat_ngram > 1 and seq.size(1) >= no_repeat_ngram - 1:
+            n = no_repeat_ngram
+            for b in range(logits.size(0)):
+                s = seq[b].tolist()
+                prefix = tuple(s[-(n - 1):])
+                for i in range(len(s) - n + 1):
+                    if tuple(s[i:i + n - 1]) == prefix:
+                        logits[b, s[i + n - 1]] = -float("inf")
         if top_k is not None:
             v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
             logits[logits < v[:, [-1]]] = -float("inf")
@@ -326,7 +348,8 @@ class GPT(nn.Module):
         return torch.multinomial(probs, num_samples=1)
 
     @torch.no_grad()
-    def generate_stream(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate_stream(self, idx, max_new_tokens, temperature=1.0, top_k=None,
+                        repetition_penalty=1.0, no_repeat_ngram=0):
         """Yield one new token (B, 1) at a time, reusing a per-layer KV cache so
         each step costs O(current length) instead of recomputing the whole
         sequence. Total length is capped at block_size; a longer prompt is
@@ -337,6 +360,7 @@ class GPT(nn.Module):
         """
         bs = self.cfg.block_size
         idx = idx[:, -bs:]
+        full = idx                                 # running sequence, for anti-repeat
         caches = [None] * len(self.blocks)
         pos = 0
         cur = idx
@@ -352,27 +376,35 @@ class GPT(nn.Module):
             x = self.norm(x)
             logits = self.lm_head(x[:, [-1], :])
             pos += T
-            nxt = self._sample(logits, temperature, top_k)
+            nxt = self._sample(logits, temperature, top_k, seq=full,
+                               repetition_penalty=repetition_penalty,
+                               no_repeat_ngram=no_repeat_ngram)
             yield nxt
+            full = torch.cat((full, nxt), dim=1)
             cur = nxt                              # next step sees only the new token
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None,
+                 repetition_penalty=1.0, no_repeat_ngram=0):
         """Convenience wrapper: run generate_stream to completion and return the
         full (prompt + generated) id sequence."""
         idx = idx[:, -self.cfg.block_size:]
-        for nxt in self.generate_stream(idx, max_new_tokens, temperature, top_k):
+        for nxt in self.generate_stream(idx, max_new_tokens, temperature, top_k,
+                                        repetition_penalty, no_repeat_ngram):
             idx = torch.cat((idx, nxt), dim=1)
         return idx
 
     @torch.no_grad()
-    def generate_naive(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate_naive(self, idx, max_new_tokens, temperature=1.0, top_k=None,
+                       repetition_penalty=1.0, no_repeat_ngram=0):
         """Cache-free reference path: re-encodes the whole context each step, so
         it is O(T^2) but supports unbounded sliding-window generation past
         block_size. Kept mainly to validate generate()'s KV cache against it."""
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.cfg.block_size:]
             logits, _ = self(idx_cond)
-            nxt = self._sample(logits, temperature, top_k)
+            nxt = self._sample(logits, temperature, top_k, seq=idx,
+                               repetition_penalty=repetition_penalty,
+                               no_repeat_ngram=no_repeat_ngram)
             idx = torch.cat((idx, nxt), dim=1)
         return idx

@@ -508,6 +508,13 @@ CLI prints with `flush=True`), so you see text ~176 ms after hitting enter inste
 waiting for the whole block. Decoding uses a "decode-the-running-list, emit-the-suffix"
 trick so multi-byte characters that span BPE tokens render correctly.
 
+The sampler also supports **anti-repetition** controls (on by default in the CLIs):
+`--repetition-penalty` (downweights already-seen tokens) and `--no-repeat-ngram`
+(hard-bans repeating n-grams). At 0.1B params the base model occasionally falls
+into degenerate loops (e.g. inside a paper table); these decisively fix it —
+`Mj Mj Mj…` → a coherent citation — without changing correctness (both default
+to off inside the model, on in the CLI).
+
 ### 8.2 Looking inside a generation
 
 `generate_annotated()` records, for every emitted token, the raw probability the

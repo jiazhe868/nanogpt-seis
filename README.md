@@ -482,7 +482,22 @@ CLI prints with `flush=True`), so you see text ~176 ms after hitting enter inste
 waiting for the whole block. Decoding uses a "decode-the-running-list, emit-the-suffix"
 trick so multi-byte characters that span BPE tokens render correctly.
 
-### 8.2 Does the model actually use 4096 tokens of context?
+### 8.2 Looking inside a generation
+
+`generate_annotated()` records, for every emitted token, the raw probability the
+model assigned it and the top-8 alternatives. Shading a real sample by that
+confidence makes the model's behavior visible — and shows what temperature
+sampling does:
+
+![generation example](assets/generation_example.png)
+
+Dark = confident (`Mw 9.0`, `the`, `earthquake`), light = uncertain. The bottom
+panel explains one light token: the model's top choice was `area` (p 0.59), but
+with temperature 0.8 it *sampled* the rarer `plane` (p 0.01) — "rupture plane",
+still perfectly valid seismology. This is exactly the exploration/quality trade-off
+that `--temperature` controls.
+
+### 8.3 Does the model actually use 4096 tokens of context?
 
 The decisive test (`--test`, `context_utilization`): measure loss by position within a
 full window. If long context helps, later positions — which have more preceding tokens
@@ -542,6 +557,7 @@ python -m src.figures.workflow
 python -m src.figures.architecture
 python -m src.figures.gqa_vs_mha
 python -m src.figures.training_curves
+CUDA_VISIBLE_DEVICES=0 python -m src.figures.generation_example  # needs a trained ckpt + GPU
 ```
 
 ---

@@ -93,6 +93,45 @@ class InferenceEngine:
                     yield text[len(prev):]
                     prev = text
 
+    @torch.no_grad()
+    def generate_annotated(self, prompt: str = "", max_new_tokens: int = 100,
+                           temperature: float = 0.8, top_k: int | None = 200,
+                           seed: int | None = 0):
+        """Generate, recording for each token the model's confidence and the top
+        alternatives it chose from — for inspecting/plotting generation behavior.
+
+        Returns (prompt, records) where each record is
+            {"text", "id", "prob", "topk": [(token_text, prob), ...]}.
+        `prob` is the RAW softmax probability (temperature 1) the model assigned
+        to the token it emitted — a clean "how sure was it" signal — while the
+        token itself is sampled under `temperature`/`top_k`.
+        """
+        if seed is not None:
+            torch.manual_seed(seed)
+        ids = self.tok.encode(prompt).ids if prompt else [self.eot_id]
+        idx = torch.tensor(ids, dtype=torch.long, device=self.device)[None]
+        records = []
+        for _ in range(max_new_tokens):
+            idx_cond = idx[:, -self.cfg.block_size:]
+            with self.amp:
+                logits, _ = self.model(idx_cond)
+            logits = logits[0, -1].float()
+            raw = torch.softmax(logits, dim=-1)              # true confidence
+            # sample from the temperature/top-k adjusted distribution
+            s = logits / max(temperature, 1e-6)
+            if top_k:
+                v, _ = torch.topk(s, min(top_k, s.numel()))
+                s[s < v[-1]] = -float("inf")
+            tid = int(torch.multinomial(torch.softmax(s, dim=-1), 1))
+            if tid == self.eot_id:
+                break
+            tp, ti = torch.topk(raw, 8)
+            topk = [(self.tok.decode([int(i)]), float(p)) for p, i in zip(tp, ti)]
+            records.append({"text": self.tok.decode([tid]), "id": tid,
+                            "prob": float(raw[tid]), "topk": topk})
+            idx = torch.cat([idx, torch.tensor([[tid]], device=self.device)], dim=1)
+        return prompt, records
+
     # ---- scoring ----
     @torch.no_grad()
     def perplexity(self, text: str) -> float:

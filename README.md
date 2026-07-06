@@ -64,6 +64,24 @@ Two facts worth pausing on:
   positions 2048–4096 is **25% lower** than on positions 0–64 — the model conditions
   on thousands of preceding tokens (see [§8](#8-stage-6--inference)).
 
+### Data mix: domain-only (v1) → general + domain (v2)
+
+A paper-only base is fluent in paper-register but repetitive/incoherent in plain
+prose. Adding ~540M tokens of Wikipedia + FineWeb-Edu (→ ~823M train tokens,
+~2.4:1 general:domain, ~3.8 epochs) gives **v2**. Measured with **bits-per-byte**
+(tokenizer-independent, so v1↔v2 is fair; `src/compare_models.py`):
+
+| held-out text | v1 (domain-only) | v2 (mix) | |
+|---|---|---|---|
+| general (Wikipedia/web) | 1.527 | **0.997** | **−35%** |
+| earthquake papers | **0.776** | 0.951 | +22% |
+
+v2 is far more fluent on general prose (and generates coherent non-earthquake text
+where v1 emits gibberish), at the cost of some domain sharpness — the classic
+fluency↔specialization trade-off. This fluent base is the right starting point for
+SFT; base pretraining alone never yields chat. Domain-only weights are kept as
+`checkpoints/ckpt_v1_domain.pt`.
+
 ---
 
 ## 2. Quick start

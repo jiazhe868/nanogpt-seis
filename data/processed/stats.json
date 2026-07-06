@@ -1,31 +1,32 @@
 {
-  "raw_docs": 46385,
-  "after_filter": 45449,
+  "raw_docs": 537131,
+  "after_filter": 535294,
   "filter_dropped": {
+    "non_english": 1596,
     "too_short": 32,
-    "low_alpha": 48,
-    "non_english": 743,
+    "low_alpha": 96,
     "dup_id": 113
   },
   "dedup": {
-    "input": 45449,
-    "exact_dups": 1126,
-    "near_dups": 304,
-    "kept": 44019
+    "input": 535294,
+    "exact_dups": 1205,
+    "near_dups": 841,
+    "kept": 533248
   },
-  "final_docs": 44019,
+  "final_docs": 533248,
   "full_text_docs": 18594,
-  "train_docs": 43799,
-  "val_docs": 220,
+  "train_docs": 531116,
+  "val_docs": 2132,
   "final_by_source": {
+    "fineweb_edu": 229198,
+    "wikipedia": 260061,
     "fulltext": 41109,
     "arxiv": 2386,
-    "openalex": 84,
     "eartharxiv": 390,
-    "substack": 20,
-    "wikipedia": 30
+    "openalex": 84,
+    "substack": 20
   },
-  "total_chars": 767832045,
-  "total_words": 117758696,
-  "est_tokens_gpt2": 191958011
+  "total_chars": 3053703868,
+  "total_words": 485703421,
+  "est_tokens_gpt2": 763425967
 }

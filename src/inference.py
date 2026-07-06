@@ -33,7 +33,8 @@ TOKENIZED = ROOT / "data" / "tokenized"
 
 
 class InferenceEngine:
-    def __init__(self, ckpt_path: Path, device: str | None = None):
+    def __init__(self, ckpt_path: Path, device: str | None = None,
+                 tokenizer_path: Path | None = None, meta_path: Path | None = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         ck = torch.load(ckpt_path, map_location=self.device)
         mcfg = ck["model_cfg"]
@@ -45,8 +46,10 @@ class InferenceEngine:
         self.iter_num = ck.get("iter_num", -1)
         self.best_val = ck.get("best_val", float("nan"))
 
-        self.tok = Tokenizer.from_file(str(TOKENIZED / "tokenizer.json"))
-        self.meta = json.loads((TOKENIZED / "meta.json").read_text())
+        # tokenizer/meta default to the current ones; override to score an older
+        # checkpoint against the tokenizer it was actually trained with.
+        self.tok = Tokenizer.from_file(str(tokenizer_path or TOKENIZED / "tokenizer.json"))
+        self.meta = json.loads((meta_path or TOKENIZED / "meta.json").read_text())
         self.eot_id = self.meta["eot_id"]
         # autocast for speed/parity with training
         self.amp = (torch.autocast("cuda", dtype=torch.bfloat16)
@@ -151,6 +154,25 @@ class InferenceEngine:
             total_nll += loss.item() * n
             total_tok += n
         return math.exp(total_nll / max(1, total_tok))
+
+    @torch.no_grad()
+    def bits_per_byte(self, text: str) -> float:
+        """Bits-per-byte of `text` — a tokenizer-INDEPENDENT fluency metric, so it
+        compares fairly across models with different vocabularies (v1 vs v2)."""
+        ids = self.tok.encode(text).ids
+        bs = self.cfg.block_size
+        total_nll = 0.0                                   # in nats
+        for i in range(0, max(1, len(ids) - 1), bs):
+            chunk = ids[i:i + bs + 1]
+            if len(chunk) < 2:
+                break
+            x = torch.tensor(chunk[:-1], device=self.device)[None]
+            y = torch.tensor(chunk[1:], device=self.device)[None]
+            with self.amp:
+                _, loss = self.model(x, y)
+            total_nll += loss.item() * (len(chunk) - 1)
+        nbytes = max(1, len(text.encode("utf-8")))
+        return total_nll / math.log(2) / nbytes
 
     @torch.no_grad()
     def val_perplexity(self, n_batches: int = 100, batch_size: int = 16) -> tuple[float, float]:

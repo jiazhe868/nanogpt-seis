@@ -13,7 +13,7 @@ import requests
 # Be a good citizen: identify ourselves and go slow.
 USER_AGENT = (
     "nanogpt-seis-research-crawler/0.1 "
-    "(educational LLM pretraining; contact: zj3474@eid.utexas.edu)"
+    "(educational LLM pretraining; contact: jiazhe868@gmail.com)"
 )
 
 DATA_RAW = Path(__file__).resolve().parents[2] / "data" / "raw"

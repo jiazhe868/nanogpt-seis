@@ -34,12 +34,12 @@ def _iter_texts(jsonl: Path):
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--vocab-size", type=int, default=16384)
-    ap.add_argument("--min-frequency", type=int, default=2)
-    ap.add_argument("--train", type=Path, default=PROCESSED / "train.jsonl")
-    ap.add_argument("--out", type=Path, default=TOKENIZED / "tokenizer.json")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--vocab-size", type=int, default=16384)
+    parser.add_argument("--min-frequency", type=int, default=2)
+    parser.add_argument("--train", type=Path, default=PROCESSED / "train.jsonl")
+    parser.add_argument("--out", type=Path, default=TOKENIZED / "tokenizer.json")
+    args = parser.parse_args()
 
     tokenizer = Tokenizer(BPE(unk_token=None))
     tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)

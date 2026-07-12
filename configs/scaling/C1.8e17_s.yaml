@@ -1,0 +1,31 @@
+model:
+  vocab_size: 16384
+  block_size: 1024
+  n_layer: 6
+  n_head: 6
+  n_kv_head: 2
+  d_model: 384
+  ffn_multiple_of: 256
+  rope_theta: 10000.0
+  dropout: 0.0
+  mup: true
+  mup_base_width: 256
+train:
+  batch_size: 32
+  grad_accum: 2
+  block_size: 1024
+  max_iters: 24240
+  warmup_iters: 400
+  lr: 0.0012
+  min_lr: 0.00011999999999999999
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  eval_interval: 500
+  eval_iters: 50
+  log_interval: 20
+  compile: true
+  dtype: bfloat16
+  seed: 1337
+  out_dir: checkpoints/scaling/C1.8e17_s

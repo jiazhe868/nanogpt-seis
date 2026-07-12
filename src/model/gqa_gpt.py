@@ -27,6 +27,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# The per-block matrix weights whose fan-in scales with d_model — the "hidden"
+# weights in muP terms. Used for both muP init scaling and the per-group LR rule.
+_HIDDEN_SUFFIXES = (".wq.weight", ".wk.weight", ".wv.weight", ".wo.weight",
+                    ".w1.weight", ".w2.weight", ".w3.weight")
+
 
 @dataclass
 class GPTConfig:
@@ -39,6 +44,11 @@ class GPTConfig:
     ffn_multiple_of: int = 256  # SwiGLU hidden dim is rounded up to a multiple of this
     rope_theta: float = 10000.0
     dropout: float = 0.0
+    # Maximal-Update Parametrization (muP): when True, hidden-matrix init and LR are
+    # scaled by the width ratio to the base model, so a single base LR transfers
+    # across widths. Off by default → identical to standard parametrization.
+    mup: bool = False
+    mup_base_width: int = 256   # d_model of the model the base LR was tuned on
 
     @property
     def head_dim(self) -> int:
@@ -159,26 +169,26 @@ class GroupedQueryAttention(nn.Module):
         # Incremental decoding: append this step's K/V to the running cache. We
         # cache only n_kv heads — that shrunken cache is the whole point of GQA.
         if kv_cache is not None:
-            pk, pv = kv_cache
-            k = torch.cat((pk, k), dim=2)
-            v = torch.cat((pv, v), dim=2)
+            past_k, past_v = kv_cache
+            k = torch.cat((past_k, k), dim=2)
+            v = torch.cat((past_v, v), dim=2)
         new_cache = (k, v)
 
         # SDPA needs matching head counts, so broadcast each KV head to the group
         # of query heads that share it. (This expansion is compute-only; the
         # stored cache above stays small.)
-        kk, vv = k, v
+        k_rep, v_rep = k, v
         if self.n_kv != self.n_head:
             rep = self.n_head // self.n_kv
-            kk = k.repeat_interleave(rep, dim=1)
-            vv = v.repeat_interleave(rep, dim=1)
+            k_rep = k.repeat_interleave(rep, dim=1)
+            v_rep = v.repeat_interleave(rep, dim=1)
 
         # Prefill processes many positions at once and must be causally masked
         # (q_len == k_len). Single-step decode has one query attending to the
         # whole cache, so no mask is needed (q_len == 1 < k_len).
-        is_causal = q.shape[2] == kk.shape[2]
+        is_causal = q.shape[2] == k_rep.shape[2]
         y = F.scaled_dot_product_attention(
-            q, kk, vv, is_causal=is_causal,
+            q, k_rep, v_rep, is_causal=is_causal,
             dropout_p=self.dropout if self.training else 0.0,
         )
 
@@ -203,8 +213,8 @@ class SwiGLU(nn.Module):
     def __init__(self, cfg: GPTConfig):
         super().__init__()
         hidden = int(8 * cfg.d_model / 3)
-        m = cfg.ffn_multiple_of
-        hidden = m * ((hidden + m - 1) // m)             # round up to a multiple of m
+        multiple = cfg.ffn_multiple_of
+        hidden = multiple * ((hidden + multiple - 1) // multiple)   # round up to a multiple
         self.w1 = nn.Linear(cfg.d_model, hidden, bias=False)   # gate
         self.w3 = nn.Linear(cfg.d_model, hidden, bias=False)   # up
         self.w2 = nn.Linear(hidden, cfg.d_model, bias=False)   # down
@@ -228,8 +238,8 @@ class Block(nn.Module):
         self.mlp = SwiGLU(cfg)
 
     def forward(self, x, cos, sin, kv_cache=None):
-        a, new_cache = self.attn(self.attn_norm(x), cos, sin, kv_cache)
-        x = x + a
+        attn_out, new_cache = self.attn(self.attn_norm(x), cos, sin, kv_cache)
+        x = x + attn_out
         x = x + self.mlp(self.mlp_norm(x))
         return x, new_cache
 
@@ -264,6 +274,22 @@ class GPT(nn.Module):
             if name.endswith("wo.weight") or name.endswith("w2.weight"):
                 nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * cfg.n_layer))
 
+        # muP (Yang et al. 2022): relative to the base width, shrink hidden-matrix
+        # init by 1/sqrt(width_mult) and the output logits by 1/width_mult, so
+        # activations and logits stay width-stable and a base LR (see
+        # configure_optimizers) transfers across widths. head_dim is fixed across
+        # our width sweep, so the 1/sqrt(head_dim) attention scale needs no change.
+        # base width == this width → ratio 1 → exact no-op. Kept as a scalar buffer
+        # (not a Python float) so it survives torch.compile / device moves.
+        ratio = cfg.mup_base_width / cfg.d_model if cfg.mup else 1.0
+        self.register_buffer("output_mult", torch.tensor(ratio, dtype=torch.float32),
+                             persistent=False)
+        if cfg.mup:
+            with torch.no_grad():
+                for name, p in self.named_parameters():
+                    if name.endswith(_HIDDEN_SUFFIXES):
+                        p.mul_(math.sqrt(ratio))
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             nn.init.normal_(m.weight, mean=0.0, std=0.02)
@@ -291,26 +317,36 @@ class GPT(nn.Module):
         x = self.norm(x)
         if targets is not None:
             logits = self.lm_head(x)
+            if self.cfg.mup:                       # width-stabilising output multiplier
+                logits = logits * self.output_mult.to(logits.dtype)
             loss = F.cross_entropy(
                 logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return logits, loss
         # At inference we only need the next-token distribution, so score just the
         # final position — avoids a (B, T, vocab) matmul over the whole sequence.
         logits = self.lm_head(x[:, [-1], :])
+        if self.cfg.mup:
+            logits = logits * self.output_mult.to(logits.dtype)
         return logits, None
 
     def configure_optimizers(self, weight_decay, lr, betas, device_type):
-        """AdamW with decoupled weight decay applied to matmul/embedding weights
-        (dim >= 2) but not to 1-D params (RMSNorm gains), which shouldn't decay."""
-        decay, no_decay = [], []
-        for p in self.parameters():
+        """AdamW with decoupled weight decay on matmul/embedding weights (dim >= 2)
+        but not 1-D params (RMSNorm gains). Under muP (cfg.mup), hidden-matrix
+        weights additionally get a per-group learning-rate multiplier of
+        base_width / d_model, so one base LR transfers across the width sweep. The
+        training loop reads each group's ``lr_mult`` when it sets the scheduled LR.
+        """
+        mult = self.cfg.d_model / self.cfg.mup_base_width if self.cfg.mup else 1.0
+        buckets: dict[tuple[float, float], list] = {}
+        for name, p in self.named_parameters():
             if not p.requires_grad:
                 continue
-            (decay if p.dim() >= 2 else no_decay).append(p)
-        groups = [
-            {"params": decay, "weight_decay": weight_decay},
-            {"params": no_decay, "weight_decay": 0.0},
-        ]
+            is_hidden = name.endswith(_HIDDEN_SUFFIXES)
+            lr_mult = (1.0 / mult) if (self.cfg.mup and is_hidden) else 1.0
+            wd = weight_decay if p.dim() >= 2 else 0.0
+            buckets.setdefault((lr_mult, wd), []).append(p)
+        groups = [{"params": ps, "weight_decay": wd, "lr_mult": lm}
+                  for (lm, wd), ps in buckets.items()]
         return torch.optim.AdamW(groups, lr=lr, betas=betas,
                                  fused=(device_type == "cuda"))
 
@@ -329,21 +365,22 @@ class GPT(nn.Module):
         logits = logits[:, -1, :] / max(temperature, 1e-6)
         if seq is not None and repetition_penalty != 1.0:
             for b in range(logits.size(0)):
-                ids = torch.unique(seq[b])
-                lv = logits[b, ids]
-                logits[b, ids] = torch.where(lv > 0, lv / repetition_penalty,
-                                             lv * repetition_penalty)
+                seen_ids = torch.unique(seq[b])
+                seen_logits = logits[b, seen_ids]
+                logits[b, seen_ids] = torch.where(
+                    seen_logits > 0, seen_logits / repetition_penalty,
+                    seen_logits * repetition_penalty)
         if seq is not None and no_repeat_ngram > 1 and seq.size(1) >= no_repeat_ngram - 1:
             n = no_repeat_ngram
             for b in range(logits.size(0)):
-                s = seq[b].tolist()
-                prefix = tuple(s[-(n - 1):])
-                for i in range(len(s) - n + 1):
-                    if tuple(s[i:i + n - 1]) == prefix:
-                        logits[b, s[i + n - 1]] = -float("inf")
+                ids = seq[b].tolist()
+                prefix = tuple(ids[-(n - 1):])
+                for i in range(len(ids) - n + 1):
+                    if tuple(ids[i:i + n - 1]) == prefix:
+                        logits[b, ids[i + n - 1]] = -float("inf")
         if top_k is not None:
-            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-            logits[logits < v[:, [-1]]] = -float("inf")
+            kth_largest, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+            logits[logits < kth_largest[:, [-1]]] = -float("inf")
         probs = F.softmax(logits, dim=-1)
         return torch.multinomial(probs, num_samples=1)
 
@@ -358,17 +395,17 @@ class GPT(nn.Module):
         The first iteration ("prefill") runs the whole prompt to fill the cache;
         every later iteration feeds only the single new token.
         """
-        bs = self.cfg.block_size
-        idx = idx[:, -bs:]
-        full = idx                                 # running sequence, for anti-repeat
+        max_len = self.cfg.block_size
+        idx = idx[:, -max_len:]
+        full_seq = idx                             # running sequence, for anti-repeat
         caches = [None] * len(self.blocks)
         pos = 0
-        cur = idx
+        step_input = idx
         for _ in range(max_new_tokens):
-            T = cur.shape[1]
-            if pos + T > bs:                       # reached the context limit
+            T = step_input.shape[1]
+            if pos + T > max_len:                  # reached the context limit
                 return
-            x = self.drop(self.tok_emb(cur))
+            x = self.drop(self.tok_emb(step_input))
             cos = self.rope_cos[:, :, pos:pos + T]   # RoPE at absolute positions
             sin = self.rope_sin[:, :, pos:pos + T]
             for i, blk in enumerate(self.blocks):
@@ -376,12 +413,12 @@ class GPT(nn.Module):
             x = self.norm(x)
             logits = self.lm_head(x[:, [-1], :])
             pos += T
-            nxt = self._sample(logits, temperature, top_k, seq=full,
-                               repetition_penalty=repetition_penalty,
-                               no_repeat_ngram=no_repeat_ngram)
-            yield nxt
-            full = torch.cat((full, nxt), dim=1)
-            cur = nxt                              # next step sees only the new token
+            next_tok = self._sample(logits, temperature, top_k, seq=full_seq,
+                                    repetition_penalty=repetition_penalty,
+                                    no_repeat_ngram=no_repeat_ngram)
+            yield next_tok
+            full_seq = torch.cat((full_seq, next_tok), dim=1)
+            step_input = next_tok                  # next step sees only the new token
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None,
@@ -389,9 +426,9 @@ class GPT(nn.Module):
         """Convenience wrapper: run generate_stream to completion and return the
         full (prompt + generated) id sequence."""
         idx = idx[:, -self.cfg.block_size:]
-        for nxt in self.generate_stream(idx, max_new_tokens, temperature, top_k,
-                                        repetition_penalty, no_repeat_ngram):
-            idx = torch.cat((idx, nxt), dim=1)
+        for next_tok in self.generate_stream(idx, max_new_tokens, temperature, top_k,
+                                             repetition_penalty, no_repeat_ngram):
+            idx = torch.cat((idx, next_tok), dim=1)
         return idx
 
     @torch.no_grad()
@@ -401,10 +438,10 @@ class GPT(nn.Module):
         it is O(T^2) but supports unbounded sliding-window generation past
         block_size. Kept mainly to validate generate()'s KV cache against it."""
         for _ in range(max_new_tokens):
-            idx_cond = idx[:, -self.cfg.block_size:]
-            logits, _ = self(idx_cond)
-            nxt = self._sample(logits, temperature, top_k, seq=idx,
-                               repetition_penalty=repetition_penalty,
-                               no_repeat_ngram=no_repeat_ngram)
-            idx = torch.cat((idx, nxt), dim=1)
+            idx_window = idx[:, -self.cfg.block_size:]
+            logits, _ = self(idx_window)
+            next_tok = self._sample(logits, temperature, top_k, seq=idx,
+                                    repetition_penalty=repetition_penalty,
+                                    no_repeat_ngram=no_repeat_ngram)
+            idx = torch.cat((idx, next_tok), dim=1)
         return idx

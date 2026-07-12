@@ -146,16 +146,16 @@ def crawl(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--arxiv", type=int, default=3000)
-    ap.add_argument("--eartharxiv", type=int, default=2000)
-    ap.add_argument("--workers", type=int, default=16)
-    ap.add_argument("--host-interval", type=float, default=1.0)
-    ap.add_argument("--min-fulltext-chars", type=int, default=4000)
-    ap.add_argument("--max-mb", type=int, default=60)
-    ap.add_argument("--no-abstract-fallback", action="store_true")
-    ap.add_argument("--out", type=Path, default=DATA_RAW / "preprints.jsonl")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--arxiv", type=int, default=3000)
+    parser.add_argument("--eartharxiv", type=int, default=2000)
+    parser.add_argument("--workers", type=int, default=16)
+    parser.add_argument("--host-interval", type=float, default=1.0)
+    parser.add_argument("--min-fulltext-chars", type=int, default=4000)
+    parser.add_argument("--max-mb", type=int, default=60)
+    parser.add_argument("--no-abstract-fallback", action="store_true")
+    parser.add_argument("--out", type=Path, default=DATA_RAW / "preprints.jsonl")
+    args = parser.parse_args()
     crawl(args)
 
 

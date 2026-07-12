@@ -79,14 +79,14 @@ def crawl(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--wiki-tokens", type=int, default=120_000_000)
-    ap.add_argument("--fineweb-tokens", type=int, default=120_000_000)
-    ap.add_argument("--min-chars", type=int, default=500)
-    ap.add_argument("--min-score", type=float, default=0.0,
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--wiki-tokens", type=int, default=120_000_000)
+    parser.add_argument("--fineweb-tokens", type=int, default=120_000_000)
+    parser.add_argument("--min-chars", type=int, default=500)
+    parser.add_argument("--min-score", type=float, default=0.0,
                     help="FineWeb-Edu quality score floor (0 = keep all)")
-    ap.add_argument("--out-dir", type=Path, default=DATA_RAW)
-    args = ap.parse_args()
+    parser.add_argument("--out-dir", type=Path, default=DATA_RAW)
+    args = parser.parse_args()
     crawl(args)
 
 

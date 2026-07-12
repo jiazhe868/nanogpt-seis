@@ -47,14 +47,14 @@ def _best(it, va):
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--log", type=Path, default=ROOT / "checkpoints" / "log.csv")
-    ap.add_argument("--label", type=str, default="ctx 4096")
-    ap.add_argument("--compare-log", type=Path, default=None,
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--log", type=Path, default=ROOT / "checkpoints" / "log.csv")
+    parser.add_argument("--label", type=str, default="ctx 4096")
+    parser.add_argument("--compare-log", type=Path, default=None,
                     help="optional second run to overlay (e.g. the 1024 baseline)")
-    ap.add_argument("--compare-label", type=str, default="ctx 1024")
-    ap.add_argument("--out", type=Path, default=ROOT / "checkpoints" / "training_dynamics.png")
-    args = ap.parse_args()
+    parser.add_argument("--compare-label", type=str, default="ctx 1024")
+    parser.add_argument("--out", type=Path, default=ROOT / "checkpoints" / "training_dynamics.png")
+    args = parser.parse_args()
 
     it, tr, va, lr = load(args.log)
     best_it, best_val = _best(it, va)
@@ -88,7 +88,8 @@ def main() -> None:
                     xy=(cbest_it, cbest_val), xytext=(cbest_it - 1200, cbest_val + 0.22),
                     fontsize=9, color=C_VAL,
                     arrowprops=dict(arrowstyle="-", color=C_VAL, lw=1))
-        fig.savefig(args.out, dpi=150, bbox_inches="tight")
+        fig.savefig(args.out, dpi=300, bbox_inches="tight")
+        fig.savefig(str(args.out).replace(".png", ".pdf"), bbox_inches="tight")
         print(f"[plot] comparison saved -> {args.out}")
         print(f"[plot] {args.label} best val {best_val:.4f} (ppl {math.exp(best_val):.2f}) @ {best_it}")
         print(f"[plot] {args.compare_label} best val {cbest_val:.4f} (ppl {math.exp(cbest_val):.2f}) @ {cbest_it}")
@@ -132,7 +133,8 @@ def main() -> None:
     ax2.set_axisbelow(True)
     ax2.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
 
-    fig.savefig(args.out, dpi=150, bbox_inches="tight")
+    fig.savefig(args.out, dpi=300, bbox_inches="tight")
+    fig.savefig(str(args.out).replace(".png", ".pdf"), bbox_inches="tight")
     print(f"[plot] saved -> {args.out}")
     print(f"[plot] best val {best_val:.4f} (ppl {math.exp(best_val):.2f}) at iter {best_it}")
 

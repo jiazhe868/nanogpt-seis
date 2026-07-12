@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import re
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -89,7 +88,7 @@ def iter_works_raw(filter_str: str, max_works: int | None = None):
             "filter": filter_str,
             "per-page": 200,
             "cursor": cursor,
-            "mailto": "zj3474@eid.utexas.edu",
+            "mailto": "jiazhe868@gmail.com",
         }
         raw = http_get(OPENALEX, params=params, min_interval=1.0)
         if raw is None:
@@ -243,21 +242,21 @@ def crawl_arxiv(max_docs: int, out: Path) -> int:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("source", choices=["openalex", "arxiv", "journals"])
-    ap.add_argument(
+    parser = argparse.ArgumentParser()
+    parser.add_argument("source", choices=["openalex", "arxiv", "journals"])
+    parser.add_argument(
         "--max",
         type=int,
         default=1000,
         help="max docs (for 'journals': max per journal)",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--title-only",
         action="store_true",
         help="journals: match 'earthquake' in title only (default: title+abstract)",
     )
-    ap.add_argument("--out", type=Path, default=None)
-    args = ap.parse_args()
+    parser.add_argument("--out", type=Path, default=None)
+    args = parser.parse_args()
     if args.source == "openalex":
         crawl_openalex(args.max, args.out or DATA_RAW / "openalex.jsonl")
     elif args.source == "journals":

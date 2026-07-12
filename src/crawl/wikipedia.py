@@ -89,10 +89,10 @@ def crawl(max_pages: int, out: Path) -> int:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--max-pages", type=int, default=500)
-    ap.add_argument("--out", type=Path, default=DATA_RAW / "wikipedia.jsonl")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max-pages", type=int, default=500)
+    parser.add_argument("--out", type=Path, default=DATA_RAW / "wikipedia.jsonl")
+    args = parser.parse_args()
     crawl(args.max_pages, args.out)
 
 

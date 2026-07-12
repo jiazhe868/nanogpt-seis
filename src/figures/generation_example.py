@@ -14,7 +14,7 @@ import matplotlib.colors as mcolors
 from matplotlib import colormaps
 from matplotlib.cm import ScalarMappable
 
-from ._style import GRID, INK, INK2, MUTED, ORANGE, PANEL, apply_base
+from ._style import GRID, INK, INK2, MUTED, ORANGE, PANEL, apply_base, save
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
@@ -114,12 +114,12 @@ def pick_step(records):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
-    ap.add_argument("--prompt", type=str, default="The San Andreas Fault")
-    ap.add_argument("--max-new-tokens", type=int, default=180)
-    ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
+    parser.add_argument("--prompt", type=str, default="The San Andreas Fault")
+    parser.add_argument("--max-new-tokens", type=int, default=180)
+    parser.add_argument("--seed", type=int, default=0)
+    args = parser.parse_args()
 
     from src.inference import InferenceEngine
     eng = InferenceEngine(args.ckpt)
@@ -162,8 +162,8 @@ def main():
     bar_panel(ax_bar, rec, step)
 
     ASSETS.mkdir(exist_ok=True)
-    fig.savefig(ASSETS / "generation_example.png", dpi=150, bbox_inches="tight")
-    print(f"saved assets/generation_example.png  (mean conf {mean_conf:.3f}, "
+    save(fig, str(ASSETS / "generation_example"))
+    print(f"saved assets/generation_example.{{png,pdf}}  (mean conf {mean_conf:.3f}, "
           f"low-conf step {step}: {rec['text']!r} p={rec['prob']:.2f})")
 
 

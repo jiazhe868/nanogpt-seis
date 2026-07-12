@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite it."
+title: "nanoGPT-Seis: the full LLM pretraining lifecycle on earthquake text"
+abstract: >-
+  A from-scratch, end-to-end small-LLM pretraining pipeline on earthquake /
+  seismology text — crawl, clean, tokenize, a GQA+RoPE decoder, DDP training,
+  and inference — built to make every stage legible.
+type: software
+authors:
+  - name: "jiazhe868"
+    email: jiazhe868@gmail.com
+url: "https://github.com/jiazhe868/nanogpt-seis"
+repository-code: "https://github.com/jiazhe868/nanogpt-seis"
+license: MIT
+keywords:
+  - large-language-models
+  - nanogpt
+  - pretraining
+  - earthquake
+  - seismology
+  - nlp

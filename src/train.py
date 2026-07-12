@@ -34,12 +34,12 @@ TOKENIZED = ROOT / "data" / "tokenized"
 # --------------------------------------------------------------------------- #
 def load_config(path: Path, overrides: dict) -> tuple[dict, dict]:
     cfg = yaml.safe_load(path.read_text())
-    m, t = cfg["model"], cfg["train"]
-    for k, v in overrides.items():
-        if v is None:
+    model_cfg, train_cfg = cfg["model"], cfg["train"]
+    for key, value in overrides.items():
+        if value is None:
             continue
-        (m if k in m else t)[k] = v
-    return m, t
+        (model_cfg if key in model_cfg else train_cfg)[key] = value
+    return model_cfg, train_cfg
 
 
 def get_batch(data, block_size, batch_size, device, device_type):
@@ -65,16 +65,16 @@ def get_lr(it, warmup, max_iters, lr, min_lr):
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", type=Path, default=ROOT / "configs" / "gpt120m.yaml")
-    ap.add_argument("--resume", action="store_true")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=ROOT / "configs" / "gpt120m.yaml")
+    parser.add_argument("--resume", action="store_true")
     # common overrides for quick runs / smoke tests
-    ap.add_argument("--max-iters", type=int, default=None, dest="max_iters")
-    ap.add_argument("--eval-interval", type=int, default=None, dest="eval_interval")
-    ap.add_argument("--batch-size", type=int, default=None, dest="batch_size")
-    ap.add_argument("--grad-accum", type=int, default=None, dest="grad_accum")
-    ap.add_argument("--no-compile", action="store_true")
-    args = ap.parse_args()
+    parser.add_argument("--max-iters", type=int, default=None, dest="max_iters")
+    parser.add_argument("--eval-interval", type=int, default=None, dest="eval_interval")
+    parser.add_argument("--batch-size", type=int, default=None, dest="batch_size")
+    parser.add_argument("--grad-accum", type=int, default=None, dest="grad_accum")
+    parser.add_argument("--no-compile", action="store_true")
+    args = parser.parse_args()
 
     overrides = {
         "max_iters": args.max_iters,
@@ -83,7 +83,7 @@ def main() -> None:
         "grad_accum": args.grad_accum,
         "compile": False if args.no_compile else None,
     }
-    mcfg, tcfg = load_config(args.config, overrides)
+    model_cfg, train_cfg = load_config(args.config, overrides)
 
     # ---- DDP setup ----
     ddp = int(os.environ.get("RANK", -1)) != -1
@@ -104,36 +104,36 @@ def main() -> None:
         seed_offset = 0
 
     device_type = "cuda" if "cuda" in device else "cpu"
-    torch.manual_seed(tcfg["seed"] + seed_offset)
+    torch.manual_seed(train_cfg["seed"] + seed_offset)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16,
-             "float32": torch.float32}[tcfg["dtype"]]
+             "float32": torch.float32}[train_cfg["dtype"]]
     ctx = (nullcontext() if device_type == "cpu"
            else torch.autocast(device_type=device_type, dtype=dtype))
 
     # ---- data ----
     meta_path = TOKENIZED / "meta.json"
     if meta_path.exists():
-        mcfg["vocab_size"] = json.loads(meta_path.read_text())["vocab_size"]
-    block_size = mcfg["block_size"]
-    batch_size = tcfg["batch_size"]
-    grad_accum = tcfg["grad_accum"]
+        model_cfg["vocab_size"] = json.loads(meta_path.read_text())["vocab_size"]
+    block_size = model_cfg["block_size"]
+    batch_size = train_cfg["batch_size"]
+    grad_accum = train_cfg["grad_accum"]
     train_data = np.memmap(TOKENIZED / "train.bin", dtype=np.uint16, mode="r")
     val_data = np.memmap(TOKENIZED / "val.bin", dtype=np.uint16, mode="r")
 
     tokens_per_iter = grad_accum * world_size * batch_size * block_size
     if master:
         print(f"[train] tokens/iter = {tokens_per_iter:,} "
-              f"| train tokens = {len(train_data):,} | vocab = {mcfg['vocab_size']}")
+              f"| train tokens = {len(train_data):,} | vocab = {model_cfg['vocab_size']}")
 
     # ---- model ----
-    gptcfg = GPTConfig(**{k: mcfg[k] for k in GPTConfig.__dataclass_fields__ if k in mcfg})
-    model = GPT(gptcfg).to(device)
+    gpt_cfg = GPTConfig(**{k: model_cfg[k] for k in GPTConfig.__dataclass_fields__ if k in model_cfg})
+    model = GPT(gpt_cfg).to(device)
     raw_model = model
     iter_num, best_val = 0, float("inf")
 
-    out_dir = ROOT / tcfg["out_dir"]
+    out_dir = ROOT / train_cfg["out_dir"]
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt_path = out_dir / "ckpt.pt"
     if args.resume and ckpt_path.exists():
@@ -144,11 +144,11 @@ def main() -> None:
             print(f"[train] resumed from iter {iter_num} (best_val {best_val:.4f})")
 
     optimizer = raw_model.configure_optimizers(
-        tcfg["weight_decay"], tcfg["lr"], (tcfg["beta1"], tcfg["beta2"]), device_type)
+        train_cfg["weight_decay"], train_cfg["lr"], (train_cfg["beta1"], train_cfg["beta2"]), device_type)
     if args.resume and ckpt_path.exists():
         optimizer.load_state_dict(ck["optimizer"])
 
-    if tcfg["compile"]:
+    if train_cfg["compile"]:
         if master:
             print("[train] compiling model (first step is slow) ...")
         model = torch.compile(model)
@@ -160,11 +160,11 @@ def main() -> None:
         out = {}
         model.eval()
         for split, data in [("train", train_data), ("val", val_data)]:
-            losses = torch.zeros(tcfg["eval_iters"])
-            for k in range(tcfg["eval_iters"]):
-                X, Y = get_batch(data, block_size, batch_size, device, device_type)
+            losses = torch.zeros(train_cfg["eval_iters"])
+            for k in range(train_cfg["eval_iters"]):
+                x, y = get_batch(data, block_size, batch_size, device, device_type)
                 with ctx:
-                    _, loss = model(X, Y)
+                    _, loss = model(x, y)
                 losses[k] = loss.item()
             out[split] = losses.mean().item()
         model.train()
@@ -175,15 +175,15 @@ def main() -> None:
         csv_path.write_text("iter,train_loss,val_loss,lr,ms_per_iter\n")
 
     # ---- training loop ----
-    X, Y = get_batch(train_data, block_size, batch_size, device, device_type)
+    x, y = get_batch(train_data, block_size, batch_size, device, device_type)
     t0 = time.time()
-    max_iters = tcfg["max_iters"]
+    max_iters = train_cfg["max_iters"]
     while iter_num <= max_iters:
-        lr = get_lr(iter_num, tcfg["warmup_iters"], max_iters, tcfg["lr"], tcfg["min_lr"])
+        lr = get_lr(iter_num, train_cfg["warmup_iters"], max_iters, train_cfg["lr"], train_cfg["min_lr"])
         for g in optimizer.param_groups:
-            g["lr"] = lr
+            g["lr"] = lr * g.get("lr_mult", 1.0)   # lr_mult != 1 only under muP
 
-        if iter_num % tcfg["eval_interval"] == 0:
+        if iter_num % train_cfg["eval_interval"] == 0:
             losses = estimate_loss()
             if master:
                 dt = (time.time() - t0) * 1000
@@ -198,7 +198,7 @@ def main() -> None:
                             "model": raw_model.state_dict(),
                             "optimizer": optimizer.state_dict(),
                             "iter_num": iter_num, "best_val": best_val,
-                            "model_cfg": mcfg,
+                            "model_cfg": model_cfg,
                         }, ckpt_path)
 
         # forward/backward with gradient accumulation
@@ -206,17 +206,17 @@ def main() -> None:
             if ddp:
                 model.require_backward_grad_sync = (micro == grad_accum - 1)
             with ctx:
-                _, loss = model(X, Y)
+                _, loss = model(x, y)
                 loss = loss / grad_accum
-            X, Y = get_batch(train_data, block_size, batch_size, device, device_type)
+            x, y = get_batch(train_data, block_size, batch_size, device, device_type)
             loss.backward()
-        if tcfg["grad_clip"] > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg["grad_clip"])
+        if train_cfg["grad_clip"] > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg["grad_clip"])
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
 
-        if iter_num % tcfg["log_interval"] == 0 and master and iter_num > 0:
-            dt = (time.time() - t0) / tcfg["log_interval"]
+        if iter_num % train_cfg["log_interval"] == 0 and master and iter_num > 0:
+            dt = (time.time() - t0) / train_cfg["log_interval"]
             print(f"[train] iter {iter_num}: loss {loss.item()*grad_accum:.4f} "
                   f"{dt*1000:.0f} ms/iter")
             t0 = time.time()

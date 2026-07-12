@@ -15,36 +15,38 @@ from datasketch import MinHash, MinHashLSH
 
 _TOKEN_RE = re.compile(r"\w+")
 
-# Set in the parent before the pool forks; worker processes inherit these via
-# copy-on-write (Linux fork) and read them by index — so the ~GB of document
-# text is never pickled across the process boundary.
-_TEXTS: list[str] = []
-_NUM_PERM = 128
-_SHINGLE_K = 5
+# Worker-shared state, set in the parent before the pool forks; worker processes
+# inherit these by copy-on-write (Linux fork) and read them by index — so the
+# ~GB of document text is never pickled across the process boundary.
+_worker_texts: list[str] = []
+_worker_num_perm = 128
+_worker_shingle_k = 5
 
 
 def exact_key(text: str) -> str:
-    """Hash of the whitespace-collapsed lowercased text for exact dedup."""
-    norm = " ".join(text.lower().split())
-    return hashlib.sha1(norm.encode("utf-8")).hexdigest()
+    """Hash of the whitespace-collapsed lowercased text, for exact dedup."""
+    normalized = " ".join(text.lower().split())
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 
-def _minhash(text: str, num_perm: int, k: int) -> MinHash:
-    """MinHash over word k-shingles (5-grams)."""
-    toks = _TOKEN_RE.findall(text.lower())
-    m = MinHash(num_perm=num_perm)
-    if len(toks) < k:
-        shingles = {" ".join(toks)} if toks else set()
+def _minhash(text: str, num_perm: int, shingle_k: int) -> MinHash:
+    """MinHash signature over word shingles (k-grams of words)."""
+    tokens = _TOKEN_RE.findall(text.lower())
+    signature = MinHash(num_perm=num_perm)
+    if len(tokens) < shingle_k:
+        shingles = {" ".join(tokens)} if tokens else set()
     else:
-        shingles = {" ".join(toks[i:i + k]) for i in range(len(toks) - k + 1)}
-    for s in shingles:
-        m.update(s.encode("utf-8"))
-    return m
+        shingles = {" ".join(tokens[i:i + shingle_k])
+                    for i in range(len(tokens) - shingle_k + 1)}
+    for shingle in shingles:
+        signature.update(shingle.encode("utf-8"))
+    return signature
 
 
-def _sig(i: int):
-    """Worker: return just the MinHash hashvalues for document index i."""
-    return _minhash(_TEXTS[i], _NUM_PERM, _SHINGLE_K).hashvalues
+def _worker_signature(doc_index: int):
+    """Pool worker: return just the MinHash hash values for one document."""
+    return _minhash(_worker_texts[doc_index], _worker_num_perm,
+                    _worker_shingle_k).hashvalues
 
 
 def dedup(
@@ -60,44 +62,44 @@ def dedup(
     Docs are processed longest-first so that when near-duplicates exist we keep
     the most complete version. Exact duplicates are removed first (cheap).
     """
-    global _TEXTS, _NUM_PERM, _SHINGLE_K
+    global _worker_texts, _worker_num_perm, _worker_shingle_k
     stats = {"input": len(docs), "exact_dups": 0, "near_dups": 0}
 
     # 1) exact dedup (cheap, serial).
     seen_exact: set[str] = set()
     unique: list[dict] = []
-    for d in docs:
-        k = exact_key(d["text"])
-        if k in seen_exact:
+    for doc in docs:
+        key = exact_key(doc["text"])
+        if key in seen_exact:
             stats["exact_dups"] += 1
             continue
-        seen_exact.add(k)
-        unique.append(d)
+        seen_exact.add(key)
+        unique.append(doc)
 
-    # 2) MinHash signatures — parallel. Sort longest-first first so signature
+    # 2) MinHash signatures — parallel. Sort longest-first here so the signature
     #    order matches the insertion order below.
-    unique.sort(key=lambda d: len(d["text"]), reverse=True)
-    _TEXTS = [d["text"] for d in unique]
-    _NUM_PERM, _SHINGLE_K = num_perm, shingle_k
-    n = len(unique)
+    unique.sort(key=lambda doc: len(doc["text"]), reverse=True)
+    _worker_texts = [doc["text"] for doc in unique]
+    _worker_num_perm, _worker_shingle_k = num_perm, shingle_k
+    n_unique = len(unique)
     workers = workers or min(32, (os.cpu_count() or 2))
-    if workers > 1 and n >= 2000:
-        with Pool(workers) as pool:                      # forks: inherits _TEXTS
-            sigs = pool.map(_sig, range(n), chunksize=256)
+    if workers > 1 and n_unique >= 2000:
+        with Pool(workers) as pool:                  # forks: inherits _worker_texts
+            signatures = pool.map(_worker_signature, range(n_unique), chunksize=256)
     else:
-        sigs = [_sig(i) for i in range(n)]
-    _TEXTS = []                                          # release the text copy
+        signatures = [_worker_signature(i) for i in range(n_unique)]
+    _worker_texts = []                               # release the text copy
 
     # 3) LSH insert/query — serial, but fast (dict ops on precomputed signatures).
     lsh = MinHashLSH(threshold=threshold, num_perm=num_perm)
     kept: list[dict] = []
-    for i, d in enumerate(unique):
-        m = MinHash(num_perm=num_perm, hashvalues=sigs[i])
-        if lsh.query(m):
+    for i, doc in enumerate(unique):
+        signature = MinHash(num_perm=num_perm, hashvalues=signatures[i])
+        if lsh.query(signature):
             stats["near_dups"] += 1
             continue
-        lsh.insert(str(i), m)
-        kept.append(d)
+        lsh.insert(str(i), signature)
+        kept.append(doc)
 
     stats["kept"] = len(kept)
     return kept, stats

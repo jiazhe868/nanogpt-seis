@@ -35,12 +35,12 @@ def load_raw() -> list[dict]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--val-frac", type=float, default=0.01)
-    ap.add_argument("--min-chars", type=int, default=200)
-    ap.add_argument("--seed", type=int, default=1337)
-    ap.add_argument("--near-dup-threshold", type=float, default=0.7)
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--val-frac", type=float, default=0.01)
+    parser.add_argument("--min-chars", type=int, default=200)
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--near-dup-threshold", type=float, default=0.7)
+    args = parser.parse_args()
 
     raw = load_raw()
     print(f"[build] loaded {len(raw)} raw docs from {RAW}")
@@ -67,7 +67,6 @@ def main() -> None:
             if len(text) > len(prev["text"]):
                 best_by_id[d["id"]] = d       # keep the fuller version
     cleaned = list(best_by_id.values())
-    per_source = collections.Counter(d["source"] for d in cleaned)
     print(f"[build] after clean+filter: {len(cleaned)}  (dropped: {dict(filt_reasons)})")
 
     # 2) near-dup removal.

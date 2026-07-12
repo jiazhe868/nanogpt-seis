@@ -89,10 +89,10 @@ def crawl(max_posts: int, out: Path) -> int:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--max", type=int, default=500)
-    ap.add_argument("--out", type=Path, default=DATA_RAW / "substack.jsonl")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max", type=int, default=500)
+    parser.add_argument("--out", type=Path, default=DATA_RAW / "substack.jsonl")
+    args = parser.parse_args()
     crawl(args.max, args.out)
 
 

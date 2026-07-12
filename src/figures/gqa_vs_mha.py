@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._style import (AQUA, BLUE, GREEN, INK, INK2, MUTED, ORANGE, PANEL, RED,
-                     VIOLET, apply_base)
+from ._style import (AQUA, BLUE, INK, INK2, MUTED, PANEL, RED, VIOLET, apply_base,
+                     save)
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
@@ -28,7 +28,7 @@ def line(ax, x1, y1, x2, y2, color):
 
 def panel(ax, y0, title, n_kv, subtitle):
     n_q = 12
-    s = 0.62
+    size = 0.62
     x0, step = 2.2, 1.05
     xq = [x0 + i * step for i in range(n_q)]
     yq, ykv = y0 + 1.7, y0
@@ -36,8 +36,8 @@ def panel(ax, y0, title, n_kv, subtitle):
     ax.text(1.7, yq + 0.55, subtitle, fontsize=9, color=INK2)
     # query heads (always 12, grouped in 4 colours)
     for i, x in enumerate(xq):
-        g = i // (n_q // 4)
-        sq(ax, x, yq, s, GROUP_COLORS[g], f"Q{i+1}", fs=7)
+        group = i // (n_q // 4)
+        sq(ax, x, yq, size, GROUP_COLORS[group], f"Q{i+1}", fs=7)
     # kv heads
     per = n_q // n_kv
     for j in range(n_kv):
@@ -45,9 +45,9 @@ def panel(ax, y0, title, n_kv, subtitle):
         served = xq[j * per:(j + 1) * per]
         cxkv = sum(served) / len(served)
         col = GROUP_COLORS[(j * per) // (n_q // 4)]   # colour by the group it serves
-        sq(ax, cxkv, ykv, s, col, "KV", fill=col + "45", fs=7)
+        sq(ax, cxkv, ykv, size, col, "KV", fill=col + "45", fs=7)
         for x in served:
-            line(ax, x, yq - s / 2, cxkv, ykv + s / 2, col)
+            line(ax, x, yq - size / 2, cxkv, ykv + size / 2, col)
     ax.text(xq[-1] + 1.1, yq, "queries", fontsize=8.5, color=MUTED, va="center")
     ax.text(xq[-1] + 1.1, ykv, "keys/values", fontsize=8.5, color=MUTED, va="center")
 
@@ -74,8 +74,8 @@ def main():
                  linewidth=1.3, edgecolor=MUTED, facecolor=PANEL))
     ax.text(0.65, 0.92, note, fontsize=9.2, color=INK2, va="center")
 
-    fig.savefig(ASSETS / "gqa_vs_mha.png", dpi=150, bbox_inches="tight")
-    print("saved assets/gqa_vs_mha.png")
+    save(fig, str(ASSETS / "gqa_vs_mha"))
+    print("saved assets/gqa_vs_mha.{png,pdf}")
 
 
 if __name__ == "__main__":

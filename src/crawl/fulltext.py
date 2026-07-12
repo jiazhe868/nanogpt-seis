@@ -43,7 +43,7 @@ from .arxiv_openalex import (
 )
 from .common import DATA_RAW, USER_AGENT, Doc
 
-EMAIL = "zj3474@eid.utexas.edu"
+EMAIL = "jiazhe868@gmail.com"
 CROSSREF = "https://api.crossref.org/works"
 UNPAYWALL = "https://api.unpaywall.org/v2/"
 
@@ -87,9 +87,9 @@ class HostThrottle:
 
     def wait(self, host: str) -> None:
         with self._guard:
-            lk = self._locks.setdefault(host, threading.Lock())
+            host_lock = self._locks.setdefault(host, threading.Lock())
             self._last.setdefault(host, 0.0)
-        with lk:
+        with host_lock:
             delta = self.min - (time.monotonic() - self._last[host])
             if delta > 0:
                 time.sleep(delta)
@@ -107,18 +107,18 @@ def _extract_fulltext(
 
     throttle.wait(urlparse(url).netloc)
     try:
-        r = _SESSION.get(url, headers={"User-Agent": USER_AGENT}, timeout=60)
-        if r.status_code != 200:
+        resp = _SESSION.get(url, headers={"User-Agent": USER_AGENT}, timeout=60)
+        if resp.status_code != 200:
             return None
-        b = r.content
+        pdf_bytes = resp.content
     except requests.RequestException:
         return None
-    if not b or not b.startswith(b"%PDF"):
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
         return None                       # missing / HTML landing / stub
-    if len(b) > max_mb * 1024 * 1024:
+    if len(pdf_bytes) > max_mb * 1024 * 1024:
         return None
     try:
-        with fitz.open(stream=io.BytesIO(b), filetype="pdf") as doc:
+        with fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
             if doc.page_count < 2:
                 return None
             text = "\n".join(page.get_text() for page in doc)
@@ -208,16 +208,16 @@ def _unpaywall_pdf_urls(doi: str, api_throttle: HostThrottle) -> list[str]:
 
 
 def _crossref_abstract(item: dict) -> str:
-    ab = item.get("abstract")
-    if not ab:
+    abstract = item.get("abstract")
+    if not abstract:
         return ""
-    ab = re.sub(r"<[^>]+>", " ", ab)          # strip JATS tags
-    return " ".join(html.unescape(ab).split())
+    abstract = re.sub(r"<[^>]+>", " ", abstract)      # strip JATS tags
+    return " ".join(html.unescape(abstract).split())
 
 
 def _crossref_date(item: dict) -> str:
-    dp = (item.get("issued") or {}).get("date-parts") or [[]]
-    parts = dp[0] if dp else []
+    date_parts = (item.get("issued") or {}).get("date-parts") or [[]]
+    parts = date_parts[0] if date_parts else []
     return "-".join(str(p) for p in parts) if parts else ""
 
 
@@ -245,10 +245,10 @@ def _crossref_to_doc(
                        text=f"{title}\n\n{text}", url=url, date=date,
                        extra={**extra, "full_text": True})
     if keep_abstract:
-        ab = _crossref_abstract(item)
-        if ab and len(ab) >= 200:
+        abstract = _crossref_abstract(item)
+        if abstract and len(abstract) >= 200:
             return Doc(source="fulltext", id=doi, title=title,
-                       text=f"{title}\n\n{ab}", url=f"https://doi.org/{doi}",
+                       text=f"{title}\n\n{abstract}", url=f"https://doi.org/{doi}",
                        date=date, extra={**extra, "full_text": False})
     return None
 
@@ -291,10 +291,10 @@ def _work_to_fulltext_doc(work, throttle, min_chars, max_mb, keep_abstract):
                        date=work.get("publication_date", ""),
                        extra={**extra, "full_text": True})
     if keep_abstract:
-        ab = _abstract_from_inverted_index(work.get("abstract_inverted_index"))
-        if ab:
+        abstract = _abstract_from_inverted_index(work.get("abstract_inverted_index"))
+        if abstract:
             return Doc(source="fulltext", id=wid, title=title,
-                       text=f"{title}\n\n{ab}", url=work.get("id", ""),
+                       text=f"{title}\n\n{abstract}", url=work.get("id", ""),
                        date=work.get("publication_date", ""),
                        extra={**extra, "full_text": False})
     return None
@@ -399,49 +399,49 @@ def crawl(args: argparse.Namespace) -> None:
 
     out.parent.mkdir(parents=True, exist_ok=True)
     fout = out.open("a", encoding="utf-8")
-    grand_ft = grand_ab = 0
+    total_full = total_abstract = 0
     t0 = time.monotonic()
     try:
-        with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
+        with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
             for name, it, id_of, proc, cap, min_hit in targets:
                 if cap <= 0:
                     continue
-                ft, ab, sc = _crawl_target(name, it, id_of, proc, cap, min_hit,
-                                           ex, fout, done, args)
-                grand_ft += ft
-                grand_ab += ab
-                rate = grand_ft / max(1e-6, (time.monotonic() - t0) / 60)
-                print(f"[fulltext] {name:44s} full={ft:5d} abstr={ab:5d} "
-                      f"scanned={sc}  ({rate:.0f} full/min, {grand_ft} total)")
+                n_full, n_abstract, n_scanned = _crawl_target(
+                    name, it, id_of, proc, cap, min_hit, pool, fout, done, args)
+                total_full += n_full
+                total_abstract += n_abstract
+                rate = total_full / max(1e-6, (time.monotonic() - t0) / 60)
+                print(f"[fulltext] {name:44s} full={n_full:5d} abstr={n_abstract:5d} "
+                      f"scanned={n_scanned}  ({rate:.0f} full/min, {total_full} total)")
     finally:
         fout.close()
-    print(f"[fulltext] DONE  full_text={grand_ft}  abstract_fallback={grand_ab}"
+    print(f"[fulltext] DONE  full_text={total_full}  abstract_fallback={total_abstract}"
           f"  -> {out}")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", choices=["crossref", "openalex"], default="crossref")
-    ap.add_argument("--per-journal", type=int, default=3000)
-    ap.add_argument("--broad", type=int, default=30000)
-    ap.add_argument("--no-broad", action="store_true")
-    ap.add_argument("--title-only", action="store_true",
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--backend", choices=["crossref", "openalex"], default="crossref")
+    parser.add_argument("--per-journal", type=int, default=3000)
+    parser.add_argument("--broad", type=int, default=30000)
+    parser.add_argument("--no-broad", action="store_true")
+    parser.add_argument("--title-only", action="store_true",
                     help="(openalex only) match title instead of title+abstract")
-    ap.add_argument("--min-fulltext-chars", type=int, default=4000)
-    ap.add_argument("--max-mb", type=int, default=60)
-    ap.add_argument("--scan-multiple", type=int, default=6)
-    ap.add_argument("--abort-after", type=int, default=400,
+    parser.add_argument("--min-fulltext-chars", type=int, default=4000)
+    parser.add_argument("--max-mb", type=int, default=60)
+    parser.add_argument("--scan-multiple", type=int, default=6)
+    parser.add_argument("--abort-after", type=int, default=400,
                     help="processed papers before applying the low-yield gate")
-    ap.add_argument("--min-hit", type=float, default=0.04,
+    parser.add_argument("--min-hit", type=float, default=0.04,
                     help="skip a journal if full-text hit-rate falls below this")
-    ap.add_argument("--workers", type=int, default=32)
-    ap.add_argument("--host-interval", type=float, default=1.0,
+    parser.add_argument("--workers", type=int, default=32)
+    parser.add_argument("--host-interval", type=float, default=1.0,
                     help="min seconds between requests to the same PDF host")
-    ap.add_argument("--api-interval", type=float, default=0.05,
+    parser.add_argument("--api-interval", type=float, default=0.05,
                     help="min seconds between Unpaywall API calls")
-    ap.add_argument("--no-abstract-fallback", action="store_true")
-    ap.add_argument("--out", type=Path, default=DATA_RAW / "fulltext.jsonl")
-    args = ap.parse_args()
+    parser.add_argument("--no-abstract-fallback", action="store_true")
+    parser.add_argument("--out", type=Path, default=DATA_RAW / "fulltext.jsonl")
+    args = parser.parse_args()
     crawl(args)
 
 

@@ -13,9 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ._style import AQUA, BLUE, GRID, INK, INK2, RED, SURFACE, apply_base
+from ._style import (AXIS, BLUE, GRID, INK2, ORANGE, RED, apply_base, save)
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 
 ROOT = Path(__file__).resolve().parents[2]
 LOG = ROOT / "checkpoints" / "train_mix.log"      # current model: general+domain mix
@@ -30,18 +29,18 @@ def get_lr(it):
         return LR * (it + 1) / WARMUP
     if it >= MAX_ITERS:
         return MIN_LR
-    r = (it - WARMUP) / (MAX_ITERS - WARMUP)
-    return MIN_LR + 0.5 * (1 + math.cos(math.pi * r)) * (LR - MIN_LR)
+    ratio = (it - WARMUP) / (MAX_ITERS - WARMUP)
+    return MIN_LR + 0.5 * (1 + math.cos(math.pi * ratio)) * (LR - MIN_LR)
 
 
 def parse():
     txt = LOG.read_text(errors="ignore")
-    tr = re.findall(r"\[train\] iter (\d+): loss ([\d.]+)", txt)
-    ev = re.findall(r"\[eval\] iter (\d+): train ([\d.]+) val ([\d.]+)", txt)
-    t_it = np.array([int(a) for a, _ in tr])
-    t_ls = np.array([float(b) for _, b in tr])
-    e_it = np.array([int(a) for a, _, _ in ev])
-    e_va = np.array([float(c) for _, _, c in ev])
+    train_rows = re.findall(r"\[train\] iter (\d+): loss ([\d.]+)", txt)
+    eval_rows = re.findall(r"\[eval\] iter (\d+): train ([\d.]+) val ([\d.]+)", txt)
+    t_it = np.array([int(it) for it, _ in train_rows])
+    t_ls = np.array([float(loss) for _, loss in train_rows])
+    e_it = np.array([int(it) for it, _, _ in eval_rows])
+    e_va = np.array([float(val) for _, _, val in eval_rows])
     return t_it, t_ls, e_it, e_va
 
 
@@ -60,10 +59,12 @@ def fig_dynamics(t_it, t_ls, e_it, e_va):
     ax.plot(t_it, t_ls, color=BLUE, lw=0.8, alpha=0.30, label="train (per 10 iters)")
     ax.plot(t_it, ema(t_ls, 0.06), color=BLUE, lw=2.2, label="train (EMA)")
     ax.plot(e_it, e_va, color=RED, lw=2, marker="o", ms=4, label="val (per 500 iters)")
-    bi = int(np.argmin(e_va))
-    ax.scatter([e_it[bi]], [e_va[bi]], s=80, facecolor="none", edgecolor=RED, lw=2, zorder=5)
-    ax.annotate(f"best val {e_va[bi]:.3f}  (ppl {math.exp(e_va[bi]):.1f})",
-                xy=(e_it[bi], e_va[bi]), xytext=(e_it[bi] - 2600, e_va[bi] + 0.9),
+    best_i = int(np.argmin(e_va))
+    ax.scatter([e_it[best_i]], [e_va[best_i]], s=80, facecolor="none", edgecolor=RED,
+               lw=2, zorder=5)
+    ax.annotate(f"best val {e_va[best_i]:.3f}  (ppl {math.exp(e_va[best_i]):.1f})",
+                xy=(e_it[best_i], e_va[best_i]),
+                xytext=(e_it[best_i] - 2600, e_va[best_i] + 0.9),
                 fontsize=9.5, color=INK2,
                 arrowprops=dict(arrowstyle="-", color=INK2, lw=1))
     ax.set_yscale("log")
@@ -77,41 +78,44 @@ def fig_dynamics(t_it, t_ls, e_it, e_va):
     ax.grid(True, which="both", color=GRID, lw=0.9)
     ax.set_axisbelow(True)
     ax.legend(frameon=False, loc="upper right")
-    fig.savefig(ASSETS / "training_dynamics.png", dpi=150, bbox_inches="tight")
-    print("saved assets/training_dynamics.png")
+    save(fig, str(ASSETS / "training_dynamics"))
+    print("saved assets/training_dynamics.{png,pdf}")
 
 
 def fig_lr_vs_loss(t_it, t_ls):
+    """Dual-axis over training step: learning rate (left) and loss (right)."""
     apply_base()
     lrs = np.array([get_lr(i) for i in t_it])
-    sm = ema(t_ls, 0.06)
-    # colour the trajectory by iteration so warmup vs decay is legible
-    pts = np.column_stack([lrs, sm]).reshape(-1, 1, 2)
-    segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
-    fig, ax = plt.subplots(figsize=(8.2, 5.4))
-    lc = LineCollection(segs, cmap="viridis", array=t_it[:-1], lw=2.4)
-    ax.add_collection(lc)
-    cb = fig.colorbar(lc, ax=ax)
-    cb.set_label("iteration", color=INK2)
-    # mark warmup peak
-    pk = int(np.argmax(lrs))
-    ax.scatter([lrs[pk]], [sm[pk]], s=60, color=RED, zorder=5)
-    ax.annotate("end of warmup\n(peak LR)", xy=(lrs[pk], sm[pk]),
-                xytext=(lrs[pk] * 0.55, sm[pk] + 1.6), fontsize=9, color=INK2,
-                arrowprops=dict(arrowstyle="->", color=INK2, lw=1))
-    ax.annotate("warmup:\nLR↑, loss crashes", xy=(1.1e-4, 6.0), fontsize=9, color=INK2)
-    ax.annotate("cosine decay:\nLR↓, loss slowly refines", xy=(0.4e-4, 2.5),
-                fontsize=9, color=INK2)
-    ax.set_xlabel("learning rate")
-    ax.set_ylabel("cross-entropy loss (EMA)")
-    ax.set_yscale("log"); ax.set_ylim(1.9, 10)
-    ax.set_yticks([2, 2.5, 3, 4, 6, 9])
-    ax.get_yaxis().set_major_formatter(plt.matplotlib.ticker.ScalarFormatter())
-    ax.set_xlim(0, LR * 1.05)
-    ax.set_title("Learning rate vs. loss (warmup → cosine decay)", loc="left", fontsize=13)
-    ax.grid(True, which="both", color=GRID, lw=0.9); ax.set_axisbelow(True)
-    fig.savefig(ASSETS / "lr_vs_loss.png", dpi=150, bbox_inches="tight")
-    print("saved assets/lr_vs_loss.png")
+    loss = ema(t_ls, 0.06)
+
+    fig, ax = plt.subplots(figsize=(8.4, 4.8))
+    ax2 = ax.twinx()
+
+    l_lr, = ax.plot(t_it, lrs, color=ORANGE, lw=2.2, label="learning rate")
+    l_loss, = ax2.plot(t_it, loss, color=BLUE, lw=2.2, label="loss (train, EMA)")
+
+    # left axis = learning rate (label coloured to its curve; spine stays gray)
+    ax.set_xlabel("training step")
+    ax.set_ylabel("learning rate", color=ORANGE)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+    ax.set_xlim(0, t_it.max())
+    ax.grid(True, color=GRID, lw=0.8)
+    ax.set_axisbelow(True)
+
+    # right axis = loss; a twin re-enables the right spine (the loss axis), kept
+    # thin gray to match the house style.
+    ax2.set_ylabel("cross-entropy loss", color=BLUE)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(True)
+    ax2.spines["right"].set_color(AXIS)
+    ax2.spines["right"].set_linewidth(0.8)
+    ax2.set_ylim(2.0, 10)
+
+    ax.set_title("Learning-rate schedule and loss over training",
+                 loc="left", fontsize=13)
+    ax.legend(handles=[l_lr, l_loss], frameon=False, loc="upper right")
+    save(fig, str(ASSETS / "lr_vs_loss"))
+    print("saved assets/lr_vs_loss.{png,pdf}")
 
 
 def main():

@@ -38,7 +38,6 @@ def encode_split(tok: Tokenizer, jsonl: Path, out_bin: Path, eot_id: int) -> int
     batch: list[str] = []
 
     def flush_encode(texts: list[str]) -> None:
-        nonlocal total
         if not texts:
             return
         for enc in tok.encode_batch(texts):
@@ -65,9 +64,9 @@ def encode_split(tok: Tokenizer, jsonl: Path, out_bin: Path, eot_id: int) -> int
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--tokenizer", type=Path, default=TOKENIZED / "tokenizer.json")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tokenizer", type=Path, default=TOKENIZED / "tokenizer.json")
+    args = parser.parse_args()
 
     meta = json.loads((TOKENIZED / "meta.json").read_text())
     eot_id = meta["eot_id"]

@@ -124,19 +124,19 @@ class InferenceEngine:
             with self.amp:
                 logits, _ = self.model(idx_cond)
             logits = logits[0, -1].float()
-            raw = torch.softmax(logits, dim=-1)              # true confidence
+            true_probs = torch.softmax(logits, dim=-1)       # the model's real confidence
             # sample from the temperature/top-k adjusted distribution
-            s = logits / max(temperature, 1e-6)
+            scaled = logits / max(temperature, 1e-6)
             if top_k:
-                v, _ = torch.topk(s, min(top_k, s.numel()))
-                s[s < v[-1]] = -float("inf")
-            tid = int(torch.multinomial(torch.softmax(s, dim=-1), 1))
+                kth_largest, _ = torch.topk(scaled, min(top_k, scaled.numel()))
+                scaled[scaled < kth_largest[-1]] = -float("inf")
+            tid = int(torch.multinomial(torch.softmax(scaled, dim=-1), 1))
             if tid == self.eot_id:
                 break
-            tp, ti = torch.topk(raw, 8)
-            topk = [(self.tok.decode([int(i)]), float(p)) for p, i in zip(tp, ti)]
+            top_probs, top_ids = torch.topk(true_probs, 8)
+            topk = [(self.tok.decode([int(i)]), float(p)) for p, i in zip(top_probs, top_ids)]
             records.append({"text": self.tok.decode([tid]), "id": tid,
-                            "prob": float(raw[tid]), "topk": topk})
+                            "prob": float(true_probs[tid]), "topk": topk})
             idx = torch.cat([idx, torch.tensor([[tid]], device=self.device)], dim=1)
         return prompt, records
 
@@ -145,10 +145,10 @@ class InferenceEngine:
     def perplexity(self, text: str) -> float:
         """Perplexity of arbitrary text (non-overlapping block_size windows)."""
         ids = self.tok.encode(text).ids
-        bs = self.cfg.block_size
+        block = self.cfg.block_size
         total_nll, total_tok = 0.0, 0
-        for i in range(0, max(1, len(ids) - 1), bs):
-            chunk = ids[i:i + bs + 1]
+        for i in range(0, max(1, len(ids) - 1), block):
+            chunk = ids[i:i + block + 1]
             if len(chunk) < 2:
                 break
             x = torch.tensor(chunk[:-1], device=self.device)[None]
@@ -165,10 +165,10 @@ class InferenceEngine:
         """Bits-per-byte of `text` — a tokenizer-INDEPENDENT fluency metric, so it
         compares fairly across models with different vocabularies (v1 vs v2)."""
         ids = self.tok.encode(text).ids
-        bs = self.cfg.block_size
+        block = self.cfg.block_size
         total_nll = 0.0                                   # in nats
-        for i in range(0, max(1, len(ids) - 1), bs):
-            chunk = ids[i:i + bs + 1]
+        for i in range(0, max(1, len(ids) - 1), block):
+            chunk = ids[i:i + block + 1]
             if len(chunk) < 2:
                 break
             x = torch.tensor(chunk[:-1], device=self.device)[None]
@@ -183,13 +183,13 @@ class InferenceEngine:
     def val_perplexity(self, n_batches: int = 100, batch_size: int = 16) -> tuple[float, float]:
         """Mean loss + perplexity over random windows of val.bin (matches training eval)."""
         data = np.memmap(TOKENIZED / "val.bin", dtype=np.uint16, mode="r")
-        bs = self.cfg.block_size
+        block = self.cfg.block_size
         losses = []
         g = torch.Generator().manual_seed(0)
         for _ in range(n_batches):
-            ix = torch.randint(len(data) - bs, (batch_size,), generator=g)
-            x = torch.stack([torch.from_numpy(data[i:i+bs].astype(np.int64)) for i in ix]).to(self.device)
-            y = torch.stack([torch.from_numpy(data[i+1:i+1+bs].astype(np.int64)) for i in ix]).to(self.device)
+            ix = torch.randint(len(data) - block, (batch_size,), generator=g)
+            x = torch.stack([torch.from_numpy(data[i:i+block].astype(np.int64)) for i in ix]).to(self.device)
+            y = torch.stack([torch.from_numpy(data[i+1:i+1+block].astype(np.int64)) for i in ix]).to(self.device)
             with self.amp:
                 _, loss = self.model(x, y)
             losses.append(loss.item())
@@ -205,19 +205,19 @@ class InferenceEngine:
         (more preceding tokens to condition on). Returns [(lo, hi, mean_loss), ...].
         """
         data = np.memmap(TOKENIZED / "val.bin", dtype=np.uint16, mode="r")
-        bs = self.cfg.block_size
-        edges = [e for e in edges if e <= bs]
-        pos_sum = torch.zeros(bs, device=self.device)
+        block = self.cfg.block_size
+        edges = [e for e in edges if e <= block]
+        pos_sum = torch.zeros(block, device=self.device)
         n = 0
         g = torch.Generator().manual_seed(0)
         for _ in range(n_windows):
-            i = int(torch.randint(len(data) - bs - 1, (1,), generator=g))
-            x = torch.from_numpy(data[i:i+bs].astype(np.int64)).to(self.device)[None]
-            y = torch.from_numpy(data[i+1:i+1+bs].astype(np.int64)).to(self.device)[None]
+            i = int(torch.randint(len(data) - block - 1, (1,), generator=g))
+            x = torch.from_numpy(data[i:i+block].astype(np.int64)).to(self.device)[None]
+            y = torch.from_numpy(data[i+1:i+1+block].astype(np.int64)).to(self.device)[None]
             with self.amp:
                 logits, _ = self.model(x, y)
-            ce = F.cross_entropy(logits[0].float(), y[0], reduction="none")  # (bs,)
-            pos_sum += ce
+            token_loss = F.cross_entropy(logits[0].float(), y[0], reduction="none")  # (block,)
+            pos_sum += token_loss
             n += 1
         mean_pos = (pos_sum / n).cpu()
         out = []
@@ -250,7 +250,7 @@ PROMPTS = [
 
 
 def run_tests(eng: InferenceEngine) -> None:
-    print(f"=== nanoGPT-Seis inference test ===")
+    print("=== nanoGPT-Seis inference test ===")
     print(f"model: {eng.model.num_params()/1e6:.1f}M params | ckpt iter {eng.iter_num} "
           f"| train-time best_val {eng.best_val:.4f} | device {eng.device}\n")
 
@@ -308,22 +308,22 @@ def interactive(eng: InferenceEngine, repetition_penalty=1.15, no_repeat_ngram=3
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
-    ap.add_argument("--test", action="store_true")
-    ap.add_argument("--interactive", action="store_true")
-    ap.add_argument("--prompt", type=str, default=None)
-    ap.add_argument("--perplexity-text", type=str, default=None)
-    ap.add_argument("--max-new-tokens", type=int, default=256)
-    ap.add_argument("--temperature", type=float, default=0.8)
-    ap.add_argument("--top-k", type=int, default=200)
-    ap.add_argument("--no-stream", action="store_true",
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
+    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--interactive", action="store_true")
+    parser.add_argument("--prompt", type=str, default=None)
+    parser.add_argument("--perplexity-text", type=str, default=None)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-k", type=int, default=200)
+    parser.add_argument("--no-stream", action="store_true",
                     help="print the full completion at once instead of streaming")
-    ap.add_argument("--repetition-penalty", type=float, default=1.15,
+    parser.add_argument("--repetition-penalty", type=float, default=1.15,
                     help="downweight already-seen tokens (1.0 = off)")
-    ap.add_argument("--no-repeat-ngram", type=int, default=3,
+    parser.add_argument("--no-repeat-ngram", type=int, default=3,
                     help="hard-ban repeating n-grams of this size (0 = off)")
-    args = ap.parse_args()
+    args = parser.parse_args()
 
     eng = InferenceEngine(args.ckpt)
     rp, ng = args.repetition_penalty, args.no_repeat_ngram

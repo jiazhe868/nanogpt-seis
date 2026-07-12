@@ -1,0 +1,252 @@
+[
+  {
+    "run_name": "C6e15_xxs",
+    "config": "configs/scaling/C6e15_xxs.yaml",
+    "out_dir": "checkpoints/scaling/C6e15_xxs",
+    "budget": 6000000000000000.0,
+    "N": 738176,
+    "D": 1354690480.3190567,
+    "max_iters": 10335,
+    "model": "xxs"
+  },
+  {
+    "run_name": "C6e15_xs",
+    "config": "configs/scaling/C6e15_xs.yaml",
+    "out_dir": "checkpoints/scaling/C6e15_xs",
+    "budget": 6000000000000000.0,
+    "N": 3148032,
+    "D": 317658778.56387734,
+    "max_iters": 2424,
+    "model": "xs"
+  },
+  {
+    "run_name": "C6e15_s",
+    "config": "configs/scaling/C6e15_s.yaml",
+    "out_dir": "checkpoints/scaling/C6e15_s",
+    "budget": 6000000000000000.0,
+    "N": 9442176,
+    "D": 105907790.74653979,
+    "max_iters": 808,
+    "model": "s"
+  },
+  {
+    "run_name": "C6e15_m",
+    "config": "configs/scaling/C6e15_m.yaml",
+    "out_dir": "checkpoints/scaling/C6e15_m",
+    "budget": 6000000000000000.0,
+    "N": 24125952,
+    "D": 41449141.57169839,
+    "max_iters": 316,
+    "model": "m"
+  },
+  {
+    "run_name": "C6e15_l",
+    "config": "configs/scaling/C6e15_l.yaml",
+    "out_dir": "checkpoints/scaling/C6e15_l",
+    "budget": 6000000000000000.0,
+    "N": 44250240,
+    "D": 22598747.487019278,
+    "max_iters": 172,
+    "model": "l"
+  },
+  {
+    "run_name": "C2e16_xs",
+    "config": "configs/scaling/C2e16_xs.yaml",
+    "out_dir": "checkpoints/scaling/C2e16_xs",
+    "budget": 2e+16,
+    "N": 3148032,
+    "D": 1058862595.2129246,
+    "max_iters": 8078,
+    "model": "xs"
+  },
+  {
+    "run_name": "C2e16_s",
+    "config": "configs/scaling/C2e16_s.yaml",
+    "out_dir": "checkpoints/scaling/C2e16_s",
+    "budget": 2e+16,
+    "N": 9442176,
+    "D": 353025969.1551326,
+    "max_iters": 2693,
+    "model": "s"
+  },
+  {
+    "run_name": "C2e16_m",
+    "config": "configs/scaling/C2e16_m.yaml",
+    "out_dir": "checkpoints/scaling/C2e16_m",
+    "budget": 2e+16,
+    "N": 24125952,
+    "D": 138163805.23899466,
+    "max_iters": 1054,
+    "model": "m"
+  },
+  {
+    "run_name": "C2e16_l",
+    "config": "configs/scaling/C2e16_l.yaml",
+    "out_dir": "checkpoints/scaling/C2e16_l",
+    "budget": 2e+16,
+    "N": 44250240,
+    "D": 75329158.29006426,
+    "max_iters": 575,
+    "model": "l"
+  },
+  {
+    "run_name": "C2e16_xl",
+    "config": "configs/scaling/C2e16_xl.yaml",
+    "out_dir": "checkpoints/scaling/C2e16_xl",
+    "budget": 2e+16,
+    "N": 75516672,
+    "D": 44140363.247645944,
+    "max_iters": 337,
+    "model": "xl"
+  },
+  {
+    "run_name": "C2e16_2xl",
+    "config": "configs/scaling/C2e16_2xl.yaml",
+    "out_dir": "checkpoints/scaling/C2e16_2xl",
+    "budget": 2e+16,
+    "N": 122054016,
+    "D": 27310312.618745238,
+    "max_iters": 208,
+    "model": "2xl"
+  },
+  {
+    "run_name": "C6e16_xs",
+    "config": "configs/scaling/C6e16_xs.yaml",
+    "out_dir": "checkpoints/scaling/C6e16_xs",
+    "budget": 6e+16,
+    "N": 3148032,
+    "D": 3176587785.638774,
+    "max_iters": 24235,
+    "model": "xs"
+  },
+  {
+    "run_name": "C6e16_s",
+    "config": "configs/scaling/C6e16_s.yaml",
+    "out_dir": "checkpoints/scaling/C6e16_s",
+    "budget": 6e+16,
+    "N": 9442176,
+    "D": 1059077907.4653978,
+    "max_iters": 8080,
+    "model": "s"
+  },
+  {
+    "run_name": "C6e16_m",
+    "config": "configs/scaling/C6e16_m.yaml",
+    "out_dir": "checkpoints/scaling/C6e16_m",
+    "budget": 6e+16,
+    "N": 24125952,
+    "D": 414491415.7169839,
+    "max_iters": 3162,
+    "model": "m"
+  },
+  {
+    "run_name": "C6e16_l",
+    "config": "configs/scaling/C6e16_l.yaml",
+    "out_dir": "checkpoints/scaling/C6e16_l",
+    "budget": 6e+16,
+    "N": 44250240,
+    "D": 225987474.8701928,
+    "max_iters": 1724,
+    "model": "l"
+  },
+  {
+    "run_name": "C6e16_xl",
+    "config": "configs/scaling/C6e16_xl.yaml",
+    "out_dir": "checkpoints/scaling/C6e16_xl",
+    "budget": 6e+16,
+    "N": 75516672,
+    "D": 132421089.74293782,
+    "max_iters": 1010,
+    "model": "xl"
+  },
+  {
+    "run_name": "C6e16_2xl",
+    "config": "configs/scaling/C6e16_2xl.yaml",
+    "out_dir": "checkpoints/scaling/C6e16_2xl",
+    "budget": 6e+16,
+    "N": 122054016,
+    "D": 81930937.85623571,
+    "max_iters": 625,
+    "model": "2xl"
+  },
+  {
+    "run_name": "C1.8e17_s",
+    "config": "configs/scaling/C1.8e17_s.yaml",
+    "out_dir": "checkpoints/scaling/C1.8e17_s",
+    "budget": 1.8e+17,
+    "N": 9442176,
+    "D": 3177233722.3961935,
+    "max_iters": 24240,
+    "model": "s"
+  },
+  {
+    "run_name": "C1.8e17_m",
+    "config": "configs/scaling/C1.8e17_m.yaml",
+    "out_dir": "checkpoints/scaling/C1.8e17_m",
+    "budget": 1.8e+17,
+    "N": 24125952,
+    "D": 1243474247.1509519,
+    "max_iters": 9487,
+    "model": "m"
+  },
+  {
+    "run_name": "C1.8e17_l",
+    "config": "configs/scaling/C1.8e17_l.yaml",
+    "out_dir": "checkpoints/scaling/C1.8e17_l",
+    "budget": 1.8e+17,
+    "N": 44250240,
+    "D": 677962424.6105784,
+    "max_iters": 5172,
+    "model": "l"
+  },
+  {
+    "run_name": "C1.8e17_xl",
+    "config": "configs/scaling/C1.8e17_xl.yaml",
+    "out_dir": "checkpoints/scaling/C1.8e17_xl",
+    "budget": 1.8e+17,
+    "N": 75516672,
+    "D": 397263269.22881347,
+    "max_iters": 3031,
+    "model": "xl"
+  },
+  {
+    "run_name": "C1.8e17_2xl",
+    "config": "configs/scaling/C1.8e17_2xl.yaml",
+    "out_dir": "checkpoints/scaling/C1.8e17_2xl",
+    "budget": 1.8e+17,
+    "N": 122054016,
+    "D": 245792813.56870717,
+    "max_iters": 1875,
+    "model": "2xl"
+  },
+  {
+    "run_name": "C5.4e17_l",
+    "config": "configs/scaling/C5.4e17_l.yaml",
+    "out_dir": "checkpoints/scaling/C5.4e17_l",
+    "budget": 5.4e+17,
+    "N": 44250240,
+    "D": 2033887273.8317351,
+    "max_iters": 15517,
+    "model": "l"
+  },
+  {
+    "run_name": "C5.4e17_xl",
+    "config": "configs/scaling/C5.4e17_xl.yaml",
+    "out_dir": "checkpoints/scaling/C5.4e17_xl",
+    "budget": 5.4e+17,
+    "N": 75516672,
+    "D": 1191789807.6864405,
+    "max_iters": 9093,
+    "model": "xl"
+  },
+  {
+    "run_name": "C5.4e17_2xl",
+    "config": "configs/scaling/C5.4e17_2xl.yaml",
+    "out_dir": "checkpoints/scaling/C5.4e17_2xl",
+    "budget": 5.4e+17,
+    "N": 122054016,
+    "D": 737378440.7061214,
+    "max_iters": 5626,
+    "model": "2xl"
+  }
+]

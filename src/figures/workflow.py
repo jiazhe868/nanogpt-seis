@@ -1,81 +1,63 @@
-"""Overall pipeline / training workflow diagram (single-row pipeline)."""
+"""Training-pipeline diagram (graphviz, left-to-right).
+
+Clean auto-routed nodes/edges: rounded filled boxes, Arial, soft neutral
+background, thin dark-gray edges. Pastel fills categorize the stages.
+"""
 from __future__ import annotations
 
 from pathlib import Path
 
-from ._style import (AQUA, BLUE, GREEN, INK, INK2, MUTED, ORANGE, RED,
-                     VIOLET, YELLOW, apply_base)
-import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+from graphviz import Digraph
 
-ROOT = Path(__file__).resolve().parents[2]
-ASSETS = ROOT / "assets"
+from ._style import (GV_BG, GV_BLUE, GV_BORDER, GV_CLUSTER, GV_EDGE, GV_GREEN,
+                     GV_PINK, GV_PURPLE, GV_TEAL, GV_YELLOW, gv_render)
 
-
-def box(ax, x, y, w, h, title, lines, color):
-    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02,rounding_size=0.10",
-                                linewidth=2, edgecolor=color, facecolor=color + "18"))
-    ax.text(x + w / 2, y + h - 0.30, title, ha="center", va="top",
-            fontsize=11.5, fontweight="bold", color=INK)
-    for i, ln in enumerate(lines):
-        ax.text(x + w / 2, y + h - 0.72 - i * 0.40, ln, ha="center", va="top",
-                fontsize=8.8, color=INK2)
-
-
-def arrow(ax, x1, y1, x2, y2, color=INK2, lw=1.9):
-    ax.add_patch(FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>",
-                                 mutation_scale=15, lw=lw, color=color,
-                                 shrinkA=0, shrinkB=0))
+ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
 
 def main():
-    apply_base()
-    fig, ax = plt.subplots(figsize=(17, 5.6))
-    ax.set_xlim(0, 25.4); ax.set_ylim(0, 8.4); ax.axis("off")
-    ax.text(0.1, 8.0, "nanoGPT-Seis — end-to-end pretraining pipeline",
-            fontsize=15, fontweight="bold", color=INK)
+    dot = Digraph("workflow")
+    dot.attr(rankdir="LR", bgcolor=GV_BG, dpi="300", nodesep="0.4", ranksep="0.8",
+           splines="ortho", compound="true", fontname="Arial", labelloc="t",
+           fontsize="20", label="nanoGPT-Seis — end-to-end pretraining pipeline")
+    dot.attr("node", shape="box", style="filled,rounded", fontname="Arial",
+           color=GV_BORDER, penwidth="1.0", fontsize="11", margin="0.18,0.10")
+    dot.attr("edge", color=GV_EDGE, penwidth="1.2", arrowsize="0.8")
 
+    # data sources cluster
+    with dot.subgraph(name="cluster_src") as c:
+        c.attr(label="free data sources  ·  earthquake domain + general (fluency)",
+               style="rounded", color=GV_CLUSTER, fontname="Arial",
+               fontsize="11", fontcolor=GV_EDGE)
+        for nid, label, fill in [
+            ("arxiv", "arXiv", GV_BLUE), ("crossref", "Crossref +\nUnpaywall", GV_BLUE),
+            ("eartharxiv", "EarthArXiv", GV_BLUE), ("substack", "Substack", GV_BLUE),
+            ("wiki", "Wikipedia", GV_TEAL), ("fineweb", "FineWeb-Edu", GV_TEAL),
+        ]:
+            c.node(nid, label, fillcolor=fill)
+
+    # pipeline stages (each a distinct pastel)
     stages = [
-        ("1. Crawl", ["concurrent, resumable", "PDF→text + validate"], BLUE, "data/raw/*.jsonl"),
-        ("2. Process", ["clean · filter", "MinHash dedup · split"], AQUA, "processed/*.jsonl"),
-        ("3. Tokenize", ["byte-level BPE 16k", "encode → uint16"], YELLOW, "tokenized/*.bin"),
-        ("4. Model", ["113M GQA + RoPE", "RMSNorm · SwiGLU"], VIOLET, "src/model/gqa_gpt.py"),
-        ("5. Train", ["2×A30 DDP · bf16", "cosine LR · compile"], RED, "checkpoints/ckpt.pt"),
-        ("6. Inference", ["KV-cache streaming", "perplexity · figures"], GREEN, "sample / inference"),
+        ("crawl", "1. Crawl\nconcurrent · resumable\nPDF → text + validate", GV_BLUE),
+        ("process", "2. Process\nclean · filter\nMinHash dedup · split", GV_GREEN),
+        ("tokenize", "3. Tokenize\nbyte-level BPE 16k\nencode → uint16", GV_YELLOW),
+        ("model", "4. Model\n113M GQA + RoPE\nRMSNorm · SwiGLU", GV_PURPLE),
+        ("train", "5. Train\n2×A30 DDP · bf16\ncosine LR · compile", GV_PINK),
+        ("infer", "6. Inference\nKV-cache streaming\nperplexity · figures", GV_TEAL),
     ]
-    w, h, gap = 3.55, 3.0, 0.62
-    y = 2.6
-    x = 0.1
-    centers = []
-    for title, lines, c, art in stages:
-        box(ax, x, y, w, h, title, lines, c)
-        ax.text(x + w / 2, y - 0.45, art, ha="center", va="center", fontsize=8,
-                color=MUTED, family="monospace")
-        centers.append((x, x + w))
-        x += w + gap
-    for i in range(len(stages) - 1):
-        arrow(ax, centers[i][1], y + h / 2, centers[i + 1][0], y + h / 2)
+    for nid, label, fill in stages:
+        dot.node(nid, label, fillcolor=fill)
 
-    # data sources feeding stage 1 from above (domain + general mix)
-    sources = [("arXiv", BLUE), ("Crossref +\nUnpaywall", AQUA), ("EarthArXiv", VIOLET),
-               ("Substack", RED), ("Wikipedia", ORANGE), ("FineWeb-Edu", GREEN)]
-    sx = 0.1
-    cw = 1.5
-    ax.text(0.1, 7.15, "free data sources — earthquake domain  +  general (fluency)",
-            fontsize=9.5, color=MUTED, style="italic")
-    for name, c in sources:
-        ax.add_patch(FancyBboxPatch((sx, 6.0), cw, 0.85,
-                     boxstyle="round,pad=0.02,rounding_size=0.06",
-                     linewidth=1.4, edgecolor=c, facecolor=c + "20"))
-        ax.text(sx + cw / 2, 6.42, name, ha="center", va="center", fontsize=7.6, color=INK)
-        sx += cw + 0.12
-    # converge arrow into Crawl
-    arrow(ax, (0.1 + sx) / 2 - 0.3, 6.0, centers[0][0] + w / 2, y + h, color=MUTED)
+    # one clean arrow from the sources cluster into Crawl (ltail clips it to the
+    # cluster border) — avoids the fan-in kinks of six separate ortho edges.
+    dot.edge("eartharxiv", "crawl", ltail="cluster_src")
+    for a, b in zip([s[0] for s in stages][:-1], [s[0] for s in stages][1:]):
+        dot.edge(a, b)
 
-    fig.savefig(ASSETS / "workflow.png", dpi=150, bbox_inches="tight")
-    print("saved assets/workflow.png")
+    ASSETS.mkdir(exist_ok=True)
+    gv_render(dot, str(ASSETS / "workflow"))
+    print("saved assets/workflow.{png,pdf}")
 
 
 if __name__ == "__main__":
-    ASSETS.mkdir(exist_ok=True)
     main()

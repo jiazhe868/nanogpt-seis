@@ -5,6 +5,8 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 .DS_Store
+.claude/
+2026-*-i-want-to-build-and-train-a-nano-gpt-for-earthqua.txt
 
 # --- Large data (regenerate with the crawlers) ---
 data/raw/
@@ -16,6 +18,11 @@ data/processed/*.log
 
 # --- Model weights (too big for git; use releases / LFS if needed) ---
 checkpoints/*.pt
+checkpoints/**/*.pt
+checkpoints/**/*.pth
+checkpoints/**/*.ckpt
+checkpoints/**/*.safetensors
+checkpoints/scaling/
 # keep small logs & plots so the training curves are reproducible/inspectable
 !checkpoints/*.csv
 !checkpoints/*.log

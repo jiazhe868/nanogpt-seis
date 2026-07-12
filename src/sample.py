@@ -19,17 +19,17 @@ TOKENIZED = ROOT / "data" / "tokenized"
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
-    ap.add_argument("--prompt", type=str, default="")
-    ap.add_argument("--num-samples", type=int, default=3)
-    ap.add_argument("--max-new-tokens", type=int, default=300)
-    ap.add_argument("--temperature", type=float, default=0.8)
-    ap.add_argument("--top-k", type=int, default=200)
-    ap.add_argument("--repetition-penalty", type=float, default=1.15)
-    ap.add_argument("--no-repeat-ngram", type=int, default=3)
-    ap.add_argument("--seed", type=int, default=1337)
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt", type=Path, default=ROOT / "checkpoints" / "ckpt.pt")
+    parser.add_argument("--prompt", type=str, default="")
+    parser.add_argument("--num-samples", type=int, default=3)
+    parser.add_argument("--max-new-tokens", type=int, default=300)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-k", type=int, default=200)
+    parser.add_argument("--repetition-penalty", type=float, default=1.15)
+    parser.add_argument("--no-repeat-ngram", type=int, default=3)
+    parser.add_argument("--seed", type=int, default=1337)
+    args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(args.seed)
